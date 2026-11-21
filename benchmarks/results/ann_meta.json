@@ -1,0 +1,18 @@
+{
+  "n_docs": 24999,
+  "dim": 384,
+  "n_queries": 300,
+  "k": 10,
+  "model": "sentence-transformers/all-MiniLM-L6-v2",
+  "queries": "real candidate-CV embeddings (not sampled from the corpus)",
+  "machine": "x86_64, 4 vCPU, Python 3.13.18",
+  "client": "single client, sequential queries, FAISS OMP threads=1",
+  "filter_selectivity": {
+    "category": 0.02532221288851554,
+    "selective": 0.0003238796218515407
+  },
+  "avg_filtered_candidates": {
+    "category": 10.0,
+    "selective": 3.1166666666666667
+  }
+}

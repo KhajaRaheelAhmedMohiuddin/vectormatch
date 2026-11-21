@@ -1,0 +1,24 @@
+# Vector databases
+faiss-cpu==1.16.0
+qdrant-client==1.20.0
+chromadb==1.5.9
+lancedb==0.41.0
+pymilvus[milvus_lite]==3.0.3
+psycopg[binary]==3.3.9
+pgvector==0.5.1
+# Embeddings / retrieval
+sentence-transformers==6.3.0
+torch==2.15.0
+scipy==1.18.1  # sparse BM25 (installed with scikit-learn / sentence-transformers)
+# Data
+numpy==2.5.5
+pandas==3.1.1
+pyarrow==26.0.1
+# Serving / UI
+fastapi==0.165.0
+uvicorn[standard]==0.54.0
+httpx==0.28.1
+streamlit==1.67.0
+plotly==7.1.0
+matplotlib==3.11.2
+tabulate==0.10.0

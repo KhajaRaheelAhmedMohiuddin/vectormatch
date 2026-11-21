@@ -1,0 +1,27 @@
+{
+  "n_docs": 24999,
+  "n_queries_total": 1000,
+  "n_dev": 500,
+  "n_test": 500,
+  "reported_on": "test split",
+  "n_categories_eval": 40,
+  "relevance": "job.category == candidate.category",
+  "k": 10,
+  "rrf_k": 60,
+  "fusion_weights_tried": [
+    0.5,
+    1.0,
+    1.5,
+    2.0,
+    3.0,
+    5.0
+  ],
+  "best": {
+    "model": "bge-small-en-v1.5",
+    "dense_weight": 2.0
+  },
+  "rerank_top_n": 20,
+  "rerank_model": "cross-encoder/ms-marco-MiniLM-L-6-v2",
+  "rerank_ms_per_query": 885.3010085739988,
+  "rerank_queries": 500
+}
