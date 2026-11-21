@@ -35,7 +35,7 @@ Retrieval runs on an embedding model **fine-tuned for CV→job matching** ([`bge
 | 🗜️ **Compression** | IVF-PQ index **17.5× smaller**; full-vector refine restores recall from 0.56 to **0.98** |
 | 🔍 **Filtered search** | Under selective filters, HNSW returned **fewer than k results on 40%** of queries in two engines, worsening to **65% at 142K** vectors; pre-filtering engines stayed accurate. pgvector's planner switches between HNSW and exact scans based on the *indexed* predicate only (`EXPLAIN` verified) |
 | 📈 **Scale** | Re-run on all **141,846** jobs: exact search slowed 10.6×, HNSW stayed sub-millisecond (0.38 ms at 0.955 recall), and its edge over exact search grew from **11× to 53×** |
-| 🚀 **Engineering** | BM25 rewritten as a sparse matrix: **640× faster** (505 → 0.8 ms) with identical scores; resume match end to end **115 ms p50** |
+| 🚀 **Engineering** | BM25 rewritten as a sparse matrix: **640× faster** (505 → 0.8 ms) with identical scores; resume match end to end **46 ms** in-process; BM25 build memory 320 → 82 MB, so the whole app peaks at **1.32 GB** with CPU-only PyTorch and fits the free Streamlit Cloud tier |
 
 <p align="center"><img src="docs/img/quality.png" alt="Retrieval quality ladder: BM25 0.436, off-the-shelf vectors 0.566, hybrid 0.579, fine-tuned vectors 0.664, fine-tuned hybrid 0.667" width="80%"></p>
 
@@ -153,7 +153,7 @@ Each result includes its rank in the dense and BM25 lists, matched and missing s
 - **Parity test**: the sparse BM25 must match the reference `rank_bm25` scores.
 - **Unit, API and UI tests**: hybrid modes, filters, rerank, data pipeline, embedding cache, model resolution and fallback, LLM fallback, FastAPI routes and a headless Streamlit render.
 - **Leakage guard**: the training-set builder asserts zero overlap with evaluation CVs and the search corpus.
-- **CI** on Python 3.12 and 3.13 against a real `pgvector/pgvector:pg16` service, plus ruff and a Docker build. 45 tests, 86% line coverage.
+- **CI** on Python 3.12 and 3.13 against a real `pgvector/pgvector:pg16` service, plus ruff, a Docker build, and a **deployment smoke test** that boots the Streamlit Cloud entry point from scratch (CPU-only PyTorch, real data, a UI click, a memory budget). 47 tests, 87% line coverage.
 
 ```bash
 make test   # pgvector tests run when PG_DSN points at Postgres + pgvector, else they are skipped

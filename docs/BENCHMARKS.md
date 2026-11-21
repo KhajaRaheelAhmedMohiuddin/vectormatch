@@ -157,5 +157,9 @@ Raw results: [`ann_scale.csv`](../benchmarks/results/ann_scale.csv), [`ann_filte
 | | Before | After |
 |---|---:|---:|
 | BM25 scoring (25K docs) | 505 ms/query (`rank_bm25`, pure Python) | **0.79 ms/query** (precomputed sparse matrix; identical scores, parity-tested) |
-| `/match` end-to-end (resume → ranked jobs + skill gap) | ~10 s | **115 ms p50** |
-| `/search` end-to-end (hybrid, FAISS) | – | **44 ms p50 / 52 ms p95** |
+| `/match` over HTTP (resume → ranked jobs + skill gap), v1.0 | ~10 s | **115 ms p50** |
+| `/search` over HTTP (hybrid, FAISS), v1.0 | – | **44 ms p50 / 52 ms p95** |
+| Resume match in-process, v1.1 (fine-tuned embedder) | – | **46 ms** |
+| BM25 index build memory (25K jobs) | +320 MB (Python lists) | **+82 MB** (typed arrays, identical scores) |
+| Fine-tuning peak RAM (batch 32 × 3 texts × 256 tokens) | 14 GB (OOM) | **3.9 GB** (SDPA + gradient checkpointing) |
+| Streamlit Cloud app, clean CPU-only install (CI smoke test) | – | boots in **21 s**, match **0.4 s**, peak **1.32 GB** |
