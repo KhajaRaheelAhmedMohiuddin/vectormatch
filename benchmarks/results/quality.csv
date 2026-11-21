@@ -6,4 +6,7 @@ Dense (vector),all-MiniLM-L6-v2,0.5608,0.5646507227575003,0.681234126984127,0.58
 Dense (vector),bge-small-en-v1.5,0.5658,0.5703292564206578,0.694597619047619,0.598
 "Hybrid RRF, equal weights",bge-small-en-v1.5,0.5612,0.5660582683368075,0.6922261904761904,0.59
 "Hybrid RRF, dense weight 2 (tuned on dev)",bge-small-en-v1.5,0.579,0.5806664418046712,0.6980087301587301,0.596
-Hybrid RRF (w=2) + cross-encoder rerank top-20,bge-small-en-v1.5,0.5806,0.5837604019411384,0.7005563492063491,0.592
+Dense (vector),bge-small-vectormatch,0.6644000000000001,0.6606975559122061,0.7396071428571429,0.642
+"Hybrid RRF, equal weights",bge-small-vectormatch,0.6156,0.6262913578962096,0.7463031746031746,0.654
+"Hybrid RRF, dense weight 1.5 (tuned on dev)",bge-small-vectormatch,0.6668,0.6671965477977954,0.7545873015873017,0.666
+Hybrid RRF (w=1.5) + cross-encoder rerank top-20,bge-small-vectormatch,0.6654000000000001,0.6678789576497881,0.7668015873015872,0.676

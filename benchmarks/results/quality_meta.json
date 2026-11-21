@@ -17,11 +17,11 @@
     5.0
   ],
   "best": {
-    "model": "bge-small-en-v1.5",
-    "dense_weight": 2.0
+    "model": "bge-small-vectormatch",
+    "dense_weight": 1.5
   },
   "rerank_top_n": 20,
   "rerank_model": "cross-encoder/ms-marco-MiniLM-L-6-v2",
-  "rerank_ms_per_query": 885.3010085739988,
+  "rerank_ms_per_query": 700.1407941440011,
   "rerank_queries": 500
 }
