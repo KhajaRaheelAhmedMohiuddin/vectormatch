@@ -123,6 +123,34 @@ def finetune_curve() -> None:
     plt.close(fig)
 
 
+def scale_filtered() -> None:
+    """Selective-filter recall at 25K vs 142K docs: which engines degrade as the corpus grows."""
+    small = pd.read_csv(RES / "ann_filtered.csv")
+    big = pd.read_csv(RES / "ann_filtered_scale.csv")
+    key = ["backend", "index"]
+    sel = lambda d: d[(d["filter"] == "selective") & (d["index"] != "flat")][key + ["recall@10"]]  # noqa: E731
+    m = sel(small).merge(sel(big), on=key, suffixes=("_25k", "_142k"))
+    m = m[~m["backend"].str.startswith("qdrant")]
+    m["engine"] = m["backend"] + "\n" + m["index"]
+    m = m.sort_values("recall@10_142k")
+    fig, ax = plt.subplots(figsize=(9.5, 4.6))
+    x = range(len(m))
+    w = 0.38
+    ax.bar([i - w / 2 for i in x], m["recall@10_25k"], width=w - 0.04, color="#2a78d6", label="25K jobs")
+    ax.bar([i + w / 2 for i in x], m["recall@10_142k"], width=w - 0.04, color="#eb6834", label="142K jobs")
+    for i, v in zip(x, m["recall@10_142k"]):
+        ax.text(i + w / 2, v + 0.015, f"{v:.2f}", ha="center", fontsize=8, color=INK)
+    ax.set_xticks(list(x), m["engine"], fontsize=8.5)
+    ax.set_ylim(0, 1.1)
+    ax.set_ylabel("filtered recall@10")
+    ax.set_title("Selective metadata filter (~0.03% of docs match): recall as the corpus grows 5.7×", loc="left", fontsize=10)
+    ax.legend(loc="upper center", bbox_to_anchor=(0.5, -0.17), ncol=2)
+    ax.grid(axis="x", visible=False)
+    fig.tight_layout()
+    fig.savefig(OUT / "scale_filtered.png", dpi=160)
+    plt.close(fig)
+
+
 def filtered() -> None:
     df = pd.read_csv(RES / "ann_filtered.csv")
     df = df[df["index"] != "flat"].copy()
@@ -150,7 +178,7 @@ def filtered() -> None:
 if __name__ == "__main__":
     OUT.mkdir(parents=True, exist_ok=True)
     for fn, f in ((quality, "quality.csv"), (finetune_curve, "finetune_log.json"), (recall_qps, "ann.csv"),
-                  (filtered, "ann_filtered.csv")):
+                  (filtered, "ann_filtered.csv"), (scale_filtered, "ann_filtered_scale.csv")):
         if (RES / f).exists():
             fn()
             print("wrote", fn.__name__)
