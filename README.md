@@ -1,193 +1,181 @@
+<div align="center">
+
 # 🧭 VectorMatch
 
-[![CI](https://github.com/KhajaRaheelAhmedMohiuddin/vectormatch/actions/workflows/ci.yml/badge.svg)](https://github.com/KhajaRaheelAhmedMohiuddin/vectormatch/actions/workflows/ci.yml) ![Python](https://img.shields.io/badge/python-3.11%2B-blue) ![License: MIT](https://img.shields.io/badge/license-MIT-green)
+### Hybrid semantic job matching, with six vector databases benchmarked head to head on real data
 
-**Hybrid semantic job matching over 25K real job posts, with six interchangeable vector databases benchmarked head to head.**
+[![CI](https://github.com/KhajaRaheelAhmedMohiuddin/vectormatch/actions/workflows/ci.yml/badge.svg)](https://github.com/KhajaRaheelAhmedMohiuddin/vectormatch/actions/workflows/ci.yml)
+![Python](https://img.shields.io/badge/python-3.12%20%7C%203.13-3776AB?logo=python&logoColor=white)
+![Vector DBs](https://img.shields.io/badge/vector%20DBs-FAISS%20·%20Qdrant%20·%20pgvector%20·%20Chroma%20·%20LanceDB%20·%20Milvus-6f42c1)
+![Ruff](https://img.shields.io/badge/lint-ruff-261230)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
-Paste a resume and get ranked, explainable job matches plus a skill-gap report. Under the hood, a single `VectorStore` interface runs the same data through **FAISS, Qdrant, pgvector (PostgreSQL), Chroma, LanceDB and Milvus**. Each one is checked by the same contract tests and measured by the same benchmark harness: recall, latency, throughput, index size and filtered-search correctness.
+**[Results](#-results-at-a-glance) · [Architecture](#-architecture) · [Quick start](#-quick-start) · [Full benchmarks](docs/BENCHMARKS.md) · [Design decisions](docs/ARCHITECTURE.md)**
 
-![Resume match UI](docs/img/ui_match_results.png)
+<img src="docs/img/demo.gif" alt="VectorMatch demo: paste a resume, get ranked jobs and a skill-gap report, browse the benchmarks" width="900">
 
-| | |
-|---|---|
-| **Data** | 24,999 real job posts + 1,000 real candidate CVs ([Djinni dataset](https://huggingface.co/datasets/lang-uk/recruitment-dataset-job-descriptions-english), MIT), 41 role categories |
-| **Retrieval** | Dense embeddings (bge-small / MiniLM) + BM25 → weighted Reciprocal Rank Fusion → optional cross-encoder rerank |
-| **Vector DBs** | FAISS · Qdrant · pgvector · Chroma · LanceDB · Milvus, behind one interface with native metadata-filter translation |
-| **Indexes** | Flat (exact) · HNSW · IVF-Flat · IVF-PQ (+ full-precision refine) |
-| **Serving** | FastAPI (`/search`, `/match`, `/explain`) · Streamlit UI · Docker Compose (Qdrant + Postgres servers) · GitHub Actions CI |
-| **Quality gates** | 33 tests, including contract tests asserting every backend matches brute-force search, with and without filters |
+</div>
 
 ---
 
-## Key results
+Paste a resume and VectorMatch returns ranked, explainable job matches from **25,000 real job posts**, plus a report of the skills those jobs ask for that the resume doesn't show.
 
-All numbers below are measured, not estimated. Reproduce them with `make data eval bench`.
-Machine: 4 vCPU cloud VM, single client, sequential queries.
+Under the hood, one `VectorStore` interface runs identical data through **FAISS, Qdrant, pgvector, Chroma, LanceDB and Milvus**. Every engine passes the same contract tests and is measured by the same harness, so questions like *"pgvector or Qdrant?"* and *"what does product quantisation cost?"* get answered with numbers.
 
-### 1. Retrieval quality: does a candidate's CV retrieve jobs in their own field?
+## ✨ Results at a glance
 
-Both CVs and jobs carry the dataset's own `Primary Keyword` label (Python, DevOps, QA, …), so relevance is objective rather than graded by an LLM. The 1,000 CVs are split 50/50: the fusion weight is tuned on **dev**, and every number below is on held-out **test**.
+| | Result |
+|---|---|
+| 🎯 **Retrieval quality** | Tuned hybrid search beats keyword search by **+33% P@10** on 1,000 real CVs (held-out test split) |
+| ⚡ **Throughput** | **5,000 QPS at 0.955 recall@10** with FAISS HNSW, ~10× exact search |
+| 🐘 **pgvector** | **~1 ms p50 at 0.97 recall**, inside plain PostgreSQL |
+| 🗜️ **Compression** | IVF-PQ index **17.5× smaller**; full-vector refine restores recall from 0.56 to **0.98** |
+| 🔍 **Filtered search** | Under selective filters, HNSW returned **fewer than k results on 40%** of queries in two engines; pgvector's planner avoided it by switching to an exact scan (`EXPLAIN` verified) |
+| 🚀 **Engineering** | BM25 rewritten as a sparse matrix: **640× faster** (505 → 0.8 ms) with identical scores; resume match end to end **115 ms p50** |
+
+<p align="center"><img src="docs/img/recall_vs_qps.png" alt="Recall vs QPS for six vector databases across HNSW, IVF-Flat and IVF-PQ" width="100%"></p>
+
+<details>
+<summary><b>Retrieval quality table</b> (1,000 real CVs → 25K jobs, relevance = same role category)</summary>
 
 | Method | Model | P@10 | nDCG@10 | MRR |
 |---|---|---:|---:|---:|
 | BM25 (keyword) | – | 0.436 | 0.439 | 0.575 |
-| Dense (vector) | all-MiniLM-L6-v2 | 0.561 | 0.565 | 0.681 |
 | Dense (vector) | bge-small-en-v1.5 | 0.566 | 0.570 | 0.695 |
 | Hybrid RRF, equal weights | bge-small-en-v1.5 | 0.561 | 0.566 | 0.692 |
 | **Hybrid RRF, dense weight 2 (tuned on dev)** | **bge-small-en-v1.5** | **0.579** | **0.581** | **0.698** |
 | + cross-encoder rerank (top-20) | bge-small-en-v1.5 | 0.581 | 0.584 | 0.701 |
 
-**Findings**
-* Vector search beats keyword search by **+33% relative P@10** (0.436 → 0.579).
-* **Naive hybrid search can hurt.** Equal-weight RRF was *worse* than dense alone, because BM25 is much weaker on long, noisy CVs. Weighting the dense list 2:1 (chosen on the dev split) makes hybrid the best method.
-* An off-the-shelf MS-MARCO cross-encoder adds only +0.2 points for **~0.9 s/query** on CPU, because it was trained on web queries, not CV→job matching. It is therefore **off by default**. Fine-tuning a reranker on CV/job pairs is the obvious next step.
+Naive equal-weight fusion is *worse* than dense alone. Weighting the stronger retriever fixes it. The off-the-shelf reranker adds +0.2 points for ~0.9 s/query, so it is off by default.
+</details>
 
-### 2. ANN benchmark: six vector databases, same 25K × 384-d vectors
+<details>
+<summary><b>Fastest configuration per engine at recall@10 ≥ 0.95</b></summary>
 
-Queries are **real CV embeddings**, not vectors sampled from the corpus, so recall is not inflated. The ground truth is exact top-10.
+| Engine / index | Setting | Recall@10 | p50 | QPS | Index size |
+|---|---|---:|---:|---:|---:|
+| FAISS HNSW | ef_search=32 | 0.955 | 0.17 ms | 5,000 | 42 MB |
+| FAISS IVF-Flat | nprobe=16 | 0.972 | 0.29 ms | 3,304 | 39 MB |
+| pgvector HNSW | ef_search=32 | 0.973 | 0.96 ms | 1,017 | 93 MB |
+| Chroma HNSW | ef_search=64 | 0.979 | 1.20 ms | 823 | – |
+| LanceDB IVF-HNSW-SQ | ef=32 | 0.969 | 6.6 ms | 148 | 52 MB |
+| Milvus Lite HNSW | ef=32 | 0.958 | 10.1 ms | 96 | 39 MB |
 
-![Recall vs QPS](docs/img/recall_vs_qps.png)
+Qdrant was measured in embedded mode (exact search only); see [limitations](#-limitations).
+</details>
 
-Fastest configuration per engine that reaches **recall@10 ≥ 0.95**:
+➡️ **Methodology, all tables, filtered-search analysis and query plans: [docs/BENCHMARKS.md](docs/BENCHMARKS.md)**
 
-| Engine / index | Setting | Recall@10 | p50 | p95 | QPS | Build | Size |
-|---|---|---:|---:|---:|---:|---:|---:|
-| FAISS HNSW (M=16) | ef_search=32 | 0.955 | 0.17 ms | 0.37 ms | 5,000 | 5.2 s | 42 MB |
-| FAISS IVF-Flat (256 lists) | nprobe=16 | 0.972 | 0.29 ms | 0.41 ms | 3,304 | 1.8 s | 39 MB |
-| pgvector HNSW (M=16) | ef_search=32 | 0.973 | 0.96 ms | 1.37 ms | 1,017 | 5.2 s | 93 MB |
-| Chroma HNSW (M=16) | ef_search=64 | 0.979 | 1.20 ms | 1.52 ms | 823 | 8.5 s | – |
-| pgvector IVFFlat (256 lists) | probes=16 | 0.971 | 1.36 ms | 1.80 ms | 721 | 2.1 s | 85 MB |
-| LanceDB IVF-HNSW-SQ | ef=32 | 0.969 | 6.6 ms | 8.3 ms | 148 | 2.0 s | 52 MB |
-| LanceDB IVF-PQ **+ refine×10** | nprobe=8 | 0.953 | 7.8 ms | 9.6 ms | 125 | 6.9 s | 40 MB |
-| Milvus Lite IVF-Flat | nprobe=8 | 0.957 | 10.0 ms | 14.0 ms | 99 | 4.7 s | 39 MB |
-| Milvus Lite HNSW | ef=32 | 0.958 | 10.1 ms | 13.4 ms | 96 | 4.6 s | 39 MB |
-| *Exact search, for reference:* FAISS Flat | – | 1.000 | 1.89 ms | 2.28 ms | 517 | 0.0 s | 38 MB |
+## 🗄️ Supported vector databases
 
-**Findings**
-* **HNSW gives ~10× the throughput of exact search at 95–97% recall.** `ef_search` is the knob: FAISS goes from 0.907 recall at 8.8K QPS to 0.997 at 1.9K QPS.
-* **pgvector is production-viable** at this scale: about 1 ms p50 at 0.97 recall, inside the Postgres you already run, with SQL filters and transactions. Its HNSW index costs 2.2× the memory of FAISS's.
-* **Product quantisation:** FAISS IVF-PQ shrinks the index **17.5×** (38.4 MB → 2.2 MB) but caps recall at about 0.64. Re-scoring the PQ candidates with full vectors (LanceDB `refine_factor=10`) recovers **0.98 recall**. This is the standard memory-versus-accuracy trade-off, measured.
-* Milvus Lite and LanceDB carry 5–10 ms of fixed per-query overhead (gRPC / Arrow round-trip), so their curves are flat. Their strengths are scale-out (Milvus) and on-disk/S3 storage (LanceDB), not single-query latency on a laptop.
-* Qdrant's embedded *local mode* is exact search only, at about 50 QPS. `docker compose up` provides a Qdrant server with HNSW, and `QDRANT_URL=… make bench` measures it.
+| Engine | Runs as | Indexes benchmarked | Metadata filter becomes |
+|---|---|---|---|
+| **FAISS** | in-process library | Flat · HNSW · IVF-Flat · IVF-PQ | `IDSelectorBatch` (filter during search) |
+| **Qdrant** | embedded / server (`QDRANT_URL`) | Flat (embedded) · HNSW (server) | `models.Filter(must=[FieldCondition…])` |
+| **pgvector** | PostgreSQL extension | Exact · HNSW · IVFFlat | SQL `WHERE` + B-tree index |
+| **Chroma** | embedded | HNSW | `where={"$and": [...]}` |
+| **LanceDB** | embedded, Lance files (disk/S3) | Exact · IVF-PQ (+refine) · IVF-HNSW-SQ | SQL predicate, pre-filter |
+| **Milvus** | Milvus Lite (same API as cluster) | FLAT · HNSW · IVF_FLAT · IVF_PQ | boolean expression |
 
-### 3. Filtered vector search: the part most tutorials skip
+Switching engines is one word: `VM_BACKEND=pgvector make api`, or `"backend": "pgvector"` per request.
 
-Real queries combine meaning with constraints ("Python roles, ≤ 1 year, fluent English"). The question is whether an ANN index still returns the right 10 results when a filter removes most of the graph.
+## 🏗️ Architecture
 
-![Filtered recall](docs/img/filtered_recall.png)
-
-| Engine / index | Category filter (2.5% of docs) | Selective filter (0.03% of docs) | Queries returning fewer than k results (selective) |
-|---|---:|---:|---:|
-| Chroma HNSW | 0.999 | **1.000** | 0% |
-| pgvector HNSW | 0.942 | 0.964 | 4% |
-| LanceDB IVF-HNSW (pre-filter) | 0.965 | 0.955 | 11% |
-| FAISS HNSW + `IDSelector` | 0.936 | **0.707** | **40%** |
-| Milvus Lite HNSW | 0.936 | 0.724 | 40% |
-
-**Finding:** under a very selective filter (about 3 valid documents per query), HNSW graph search in FAISS and Milvus Lite at `ef=64` often cannot reach the valid nodes, and **40% of queries come back short.** Chroma stays exact.
-
-pgvector is the instructive case. Its cost-based planner changes strategy with filter selectivity, and `EXPLAIN` shows it:
-
-```
-category = 'Python'                         → Index Scan using …_embedding_idx (hnsw)   Filter: category      -- ANN, then post-filter
-category = 'Python' AND exp<=1 AND fluent   → Bitmap Heap Scan (btree on category) → Sort by <#>          -- exact search on the subset
-IVFFlat, either filter                      → Index Scan using …ivfflat… Filter: …                          -- always post-filter → 24% short
+```mermaid
+flowchart LR
+    Q[Resume or query] --> E[Embedder<br/>bge-small, normalised]
+    Q --> B[BM25<br/>sparse matrix]
+    E --> VS{{VectorStore interface}}
+    VS --> F[FAISS] & QD[Qdrant] & PG[pgvector] & CH[Chroma] & LA[LanceDB] & MI[Milvus]
+    F & QD & PG & CH & LA & MI --> R[Weighted RRF<br/>dense 2 : 1 BM25]
+    B --> R
+    FL[Filter: category · experience · English] -.native translation.-> VS
+    FL -.mask.-> B
+    R --> RR[Cross-encoder rerank<br/>optional]
+    RR --> S[Skill overlap & gap]
+    S --> X[Grounded LLM explanation<br/>Gemini, rule-based fallback]
+    S --> API[FastAPI /search /match /explain]
+    S --> UI[Streamlit UI]
 ```
 
-Mitigations: raise `ef_search` or `probes`, pre-filter for highly selective predicates, partition by tenant or category, or use filter-aware engines (Qdrant server's filterable HNSW, pgvector ≥ 0.8 iterative index scans).
+Design rationale (why one interface, why real CV queries, why rank fusion, why filters are first-class): **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)**
 
-### 4. Engineering wins
-
-| | Before | After |
-|---|---:|---:|
-| BM25 scoring (25K docs) | 505 ms/query (`rank_bm25`, pure Python) | **0.79 ms/query** (precomputed sparse matrix; identical scores, parity-tested) |
-| `/match` end-to-end (resume → ranked jobs + skill gap) | ~10 s | **115 ms p50** |
-| `/search` end-to-end (hybrid, FAISS) | – | **44 ms p50 / 52 ms p95** |
-
----
-
-## Quick start
+## 🚀 Quick start
 
 ```bash
+git clone https://github.com/KhajaRaheelAhmedMohiuddin/vectormatch && cd vectormatch
 python -m venv .venv && source .venv/bin/activate
-make install
-make data        # download dataset, build corpus, embed with 2 models (~25 min on 4 CPUs)
-make test        # 33 tests; pgvector tests run when PG_DSN points at Postgres + pgvector
-make ui          # http://localhost:8501
-make api         # http://localhost:8000/docs
+make install   # pinned deps + package
+make data      # download dataset, embed 25K jobs + 1K CVs (~25 min on 4 CPUs)
+make ui        # http://localhost:8501
 ```
 
-Full stack with real Qdrant and Postgres servers:
+Full stack with real Qdrant and PostgreSQL/pgvector servers:
 
 ```bash
-docker compose up --build
+docker compose up --build   # API :8000 · UI :8501 · Qdrant :6333 · Postgres :5432
 ```
 
-Reproduce the benchmarks:
+Run `make help` for every task (`eval`, `bench`, `charts`, `test`, `api`, …).
+
+### API example
 
 ```bash
-make eval        # retrieval quality → benchmarks/results/quality*.csv
-make bench       # ANN + filtered search, all 6 DBs → benchmarks/results/ann*.csv
-make charts      # → docs/img/*.png
-```
-
-### API
-
-```bash
-curl -X POST localhost:8000/match -H 'content-type: application/json' -d '{
-  "resume": "AI engineer, Python, PyTorch, LangChain, RAG, FastAPI, Docker ...",
+curl -s localhost:8000/match -H 'content-type: application/json' -d '{
+  "resume": "AI engineer: Python, PyTorch, LangChain, RAG, FastAPI, Docker ...",
   "k": 5,
   "backend": "pgvector",
   "filters": {"max_exp_years": 3, "categories": ["Python", "Data Science"]}
 }'
 ```
 
-Returns ranked jobs, each with its rank in the dense and BM25 lists, matched and missing skills, and an aggregate **skill-gap report**. `POST /explain` gives a grounded "why am I a fit?" explanation. It uses Gemini when `GEMINI_API_KEY` is set (versioned prompt, grounded in the two texts) and falls back to a rule-based explanation otherwise.
+Each result includes its rank in the dense and BM25 lists, matched and missing skills, and an aggregate skill-gap report. Interactive docs are at `localhost:8000/docs`. Set `GEMINI_API_KEY` to enable grounded LLM explanations on `/explain`; without it, a deterministic explanation is returned.
 
----
+## 🧪 Testing & quality
 
-## How it works
+- **Contract tests**: every backend must equal brute-force search for exact indexes, reach ≥ 0.9 recall for ANN indexes, and never return a document that violates a filter.
+- **Parity test**: the sparse BM25 must match the reference `rank_bm25` scores.
+- **Unit, API and UI tests**: hybrid modes, filters, rerank, data pipeline, embedding cache, LLM fallback, FastAPI routes and a headless Streamlit render.
+- **CI** on Python 3.12 and 3.13 against a real `pgvector/pgvector:pg16` service, plus ruff and a Docker build. 40 tests, 87% line coverage.
 
-See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the full diagram and design rationale.
-
+```bash
+make test   # pgvector tests run when PG_DSN points at Postgres + pgvector, else they are skipped
 ```
-resume ─► embed (bge-small) ─► VectorStore.search(k, Filter) ─┐   one interface, 6 engines
-       └► BM25 (sparse matrix, same Filter as mask) ───────────┴─► weighted RRF (2:1)
-                                                                  └─► [cross-encoder rerank]
-                                                                       └─► skill overlap / gap ─► [LLM explanation]
-```
+
+## 📁 Project structure
 
 ```
 vectormatch/
-├── stores/            # base.py (VectorStore, Filter, IndexConfig) + one adapter per DB
-│   ├── faiss_store.py    qdrant_store.py    pgvector_store.py
-│   └── chroma_store.py   lancedb_store.py   milvus_store.py
-├── embeddings.py      # sentence-transformers, normalised, cached to .npy
-├── sparse.py          # BM25 as a precomputed sparse matrix
-├── fusion.py          # weighted Reciprocal Rank Fusion
-├── rerank.py          # cross-encoder
-├── engine.py          # hybrid search, filters, resume matching
-├── skills.py          # 110 skills / ~200 regex aliases, skill-gap analysis
-├── llm.py             # optional grounded Gemini explanation, rule-based fallback
-└── eval/metrics.py    # P@k, nDCG, MRR, recall@k, latency percentiles
-api/main.py            # FastAPI
-ui/app.py              # Streamlit
-scripts/               # prepare_data · eval_quality · benchmark_ann · make_charts
-tests/                 # contract tests (6 DBs vs brute force) + unit + API tests
+├── stores/          one adapter per engine behind base.VectorStore (+ Filter, IndexConfig)
+├── engine.py        hybrid retrieval, filters, rerank, resume matching
+├── embeddings.py    sentence-transformers, normalised, cached to .npy
+├── sparse.py        BM25 as a precomputed sparse matrix
+├── fusion.py        weighted Reciprocal Rank Fusion
+├── rerank.py        cross-encoder
+├── skills.py        110 skills / ~200 aliases, skill-gap analysis
+├── llm.py           optional grounded explanation (versioned prompt)
+└── eval/metrics.py  P@k, nDCG, MRR, recall@k, latency percentiles
+api/                 FastAPI service
+ui/                  Streamlit app
+scripts/             prepare_data · eval_quality · benchmark_ann · make_charts
+benchmarks/results/  every number in the docs, as CSV/JSON
+tests/               contract · unit · API · UI tests
 ```
 
-## Limitations
+## ⚠️ Limitations
 
-* Category labels are a *proxy* for relevance: a "Python" CV can legitimately fit a "Data Science" job. Absolute P@10 is therefore conservative; the *relative* ordering of methods is the signal.
-* Latencies are single-client on a 4-vCPU VM. Embedded engines (FAISS, Chroma) avoid the network and protocol overhead that client/server engines pay.
-* Qdrant was benchmarked in embedded mode (exact search only). Its HNSW numbers need the server (`docker compose up`).
+- **Relevance is a proxy.** A "Python" CV can legitimately fit a "Data Science" job, so absolute P@10 is conservative. The relative ordering of methods is the signal.
+- **Scale and hardware.** Results are for 25K vectors on a 4-vCPU VM with a single client. Client/server engines pay protocol overhead that in-process FAISS does not.
+- **Qdrant** was benchmarked in embedded mode, which is exact search only. Its HNSW numbers need the server (`docker compose up`, then `QDRANT_URL=http://localhost:6333 make bench`).
 
-## Roadmap
+## 🗺️ Roadmap
 
-* Fine-tune the embedding model and the cross-encoder on CV→job pairs (contrastive loss, hard negatives mined from BM25).
-* Benchmark at 1M+ vectors, and add Qdrant server, Weaviate and pgvector 0.8 iterative scans.
-* Multi-vector representation (title / requirements / responsibilities) and Matryoshka-truncated embeddings.
+- [ ] Fine-tune the embedder and cross-encoder on CV→job pairs, with hard negatives mined from BM25
+- [ ] Qdrant server, Pinecone and Weaviate adapters; pgvector 0.8 iterative scans for filtered HNSW
+- [ ] Scale benchmark to 1M+ vectors; multi-threaded throughput
+- [ ] Multi-vector job representation (title / requirements / responsibilities)
 
-## License
+## 📜 License & acknowledgements
 
-MIT. Dataset: [Djinni recruitment dataset](https://huggingface.co/datasets/lang-uk/recruitment-dataset-job-descriptions-english) (MIT).
+MIT © Khaja Raheel Ahmed Mohiuddin. See [LICENSE](LICENSE).
+Data: [Djinni recruitment dataset](https://huggingface.co/datasets/lang-uk/recruitment-dataset-job-descriptions-english) by lang-uk (MIT). Models: [BAAI/bge-small-en-v1.5](https://huggingface.co/BAAI/bge-small-en-v1.5), [all-MiniLM-L6-v2](https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2), [ms-marco-MiniLM-L-6-v2](https://huggingface.co/cross-encoder/ms-marco-MiniLM-L-6-v2).

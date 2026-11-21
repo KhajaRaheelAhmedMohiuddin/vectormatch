@@ -9,3 +9,6 @@ data/indexes/
 .env
 pgdata/
 *.log
+.coverage
+coverage.md
+.ruff_cache/

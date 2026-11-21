@@ -145,5 +145,5 @@ def load_engine(backend: str | None = None, model: str | None = None) -> SearchE
     emb = Embedder(model)
     vecs = emb.embed_cached("jobs", [job_text(r) for r in corpus.to_dict("records")])
     engine = SearchEngine(corpus, emb, vecs, backend=backend)
-    emb.embed_query("warm-up")  # load model weights now, so the first user request is not a cold start
+    engine.search("python developer warm-up", k=1)  # load weights + touch every code path: no cold first request
     return engine

@@ -1,0 +1,12 @@
+name: Feature / new backend
+description: Propose a feature, a new vector database adapter, or a new benchmark
+labels: [enhancement]
+body:
+  - type: textarea
+    attributes:
+      label: Proposal
+    validations: {required: true}
+  - type: textarea
+    attributes:
+      label: How would we measure it?
+      description: Which metric in the eval or benchmark harness should move, and how would we verify it?

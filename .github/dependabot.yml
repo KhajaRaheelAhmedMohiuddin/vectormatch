@@ -1,0 +1,13 @@
+version: 2
+updates:
+  - package-ecosystem: pip
+    directory: /
+    schedule: {interval: monthly}
+    groups:
+      vector-dbs:
+        patterns: ["faiss-cpu", "qdrant-client", "chromadb", "lancedb", "pymilvus", "pgvector", "psycopg*"]
+      ml:
+        patterns: ["torch", "sentence-transformers", "numpy", "scipy", "pandas", "pyarrow"]
+  - package-ecosystem: github-actions
+    directory: /
+    schedule: {interval: monthly}

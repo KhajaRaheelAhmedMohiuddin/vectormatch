@@ -19,7 +19,6 @@ from vectormatch.skills import extract_skills, overlap  # noqa: E402
 from vectormatch.stores import BACKENDS, Filter  # noqa: E402
 
 RESULTS = ROOT / "benchmarks" / "results"
-st.set_page_config(page_title="VectorMatch", page_icon="🧭", layout="wide")
 
 
 @st.cache_resource(show_spinner="Loading 25K job embeddings, BM25 and the ANN index…")
@@ -128,7 +127,7 @@ def tab_bench():
                       hover_data=["knob", "knob_value", "p95_ms", "build_s", "size_mb"],
                       labels={"qps": "queries / second (log)", "recall@10": "recall@10 vs exact search"})
         st.plotly_chart(fig, use_container_width=True)
-        st.dataframe(df.drop(columns=["engine"]).style.format(precision=3), use_container_width=True, hide_index=True)
+        st.dataframe(df.style.format(precision=3), use_container_width=True, hide_index=True)
     fp = RESULTS / "ann_filtered.csv"
     if fp.exists():
         st.markdown("#### Filtered search — does the engine still return k correct results under a selective filter?")
@@ -139,6 +138,7 @@ def tab_bench():
 
 
 def main():
+    st.set_page_config(page_title="VectorMatch", page_icon="🧭", layout="wide")
     st.title("🧭 VectorMatch")
     st.caption("Hybrid semantic job matching over 25K real job posts · 6 interchangeable vector databases · "
                "BM25 + dense + RRF + cross-encoder · measured, not guessed")
@@ -152,4 +152,5 @@ def main():
         tab_bench()
 
 
-main()
+if __name__ == "__main__":  # Streamlit runs scripts as __main__; tests import the tab functions directly
+    main()

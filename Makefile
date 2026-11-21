@@ -1,30 +1,37 @@
 PY ?= python
+.DEFAULT_GOAL := help
 
-.PHONY: install data eval bench charts test api ui up
+.PHONY: help install data eval bench charts test lint api ui up
 
-install:            ## install dependencies
-	$(PY) -m pip install -r requirements-dev.txt
+help:               ## show this help
+	@grep -E '^[a-z]+:.*##' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*## "}; {printf "  \033[36m%-9s\033[0m %s\n", $$1, $$2}'
+
+install:            ## install pinned dependencies + the package (editable)
+	$(PY) -m pip install -r requirements-dev.txt && $(PY) -m pip install -e . --no-deps
 
 data:               ## download dataset, build corpus, embed with 2 models (~25 min on 4 CPUs)
 	$(PY) scripts/prepare_data.py --jobs 25000 --queries 1000 --models sentence-transformers/all-MiniLM-L6-v2 BAAI/bge-small-en-v1.5
 
-eval:               ## retrieval quality: BM25 vs dense vs hybrid vs rerank
+eval:               ## retrieval quality: BM25 vs dense vs hybrid vs rerank (dev/test split)
 	$(PY) scripts/eval_quality.py
 
-bench:              ## ANN benchmark across all 6 vector DBs (needs Postgres for pgvector: PG_DSN)
+bench:              ## ANN + filtered-search benchmark across all 6 vector DBs (pgvector needs PG_DSN)
 	$(PY) scripts/benchmark_ann.py
 
 charts:             ## render PNG charts from benchmark CSVs
 	$(PY) scripts/make_charts.py
 
-test:
-	$(PY) -m pytest -q
+test:               ## run the test suite with coverage
+	$(PY) -m pytest -q --cov
 
-api:
+lint:               ## ruff lint
+	ruff check .
+
+api:                ## run the FastAPI service on :8000
 	uvicorn api.main:app --reload --port 8000
 
-ui:
+ui:                 ## run the Streamlit UI on :8501
 	streamlit run ui/app.py
 
-up:
+up:                 ## full stack with Qdrant + Postgres servers
 	docker compose up --build

@@ -107,16 +107,17 @@ def candidate_text(row: pd.Series | dict) -> str:
     return f"{row['headline']}\n{row['cv']}"
 
 
-def build_corpus(n_jobs: int = 30_000, n_queries: int = 1_000, seed: int = 42) -> tuple[pd.DataFrame, pd.DataFrame]:
+def build_corpus(n_jobs: int = 30_000, n_queries: int = 1_000, seed: int = 42,
+                 raw_dir: Path | None = None) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Create the job corpus and the labelled evaluation query set (candidate CVs)."""
-    jobs = load_jobs()
+    jobs = load_jobs(raw_dir)
     counts = jobs["category"].value_counts()
     keep = counts[counts >= MIN_CATEGORY_SIZE].index
     jobs = jobs[jobs["category"].isin(keep)]
     corpus = stratified_sample(jobs, n_jobs, by="category", seed=seed)
     corpus.insert(0, "doc_id", range(len(corpus)))
 
-    cands = load_candidates()
+    cands = load_candidates(raw_dir)
     # "Other" is not a meaningful relevance label, so it is not used for queries.
     eval_cats = set(corpus["category"].unique()) - {"Other"}
     cands = cands[cands["category"].isin(eval_cats)]

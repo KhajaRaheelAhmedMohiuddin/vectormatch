@@ -1,9 +1,33 @@
 name: CI
-on: [push, pull_request]
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  test:
+  lint:
     runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - run: pip install ruff==0.14.0
+      - run: ruff check .
+
+  test:
+    name: test (py${{ matrix.python }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.12", "3.13"]
     services:
       postgres:
         image: pgvector/pgvector:pg16
@@ -16,12 +40,29 @@ jobs:
     env:
       PG_DSN: postgresql://postgres:postgres@localhost:5432/vectormatch
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
         with:
-          python-version: "3.12"
+          python-version: ${{ matrix.python }}
           cache: pip
       - run: pip install torch --index-url https://download.pytorch.org/whl/cpu
       - run: pip install -r requirements-dev.txt
-      - run: ruff check .
-      - run: pytest -q   # contract tests run against all 6 vector DBs, incl. real pgvector
+      # Contract tests run against all 6 vector DBs, including a real Postgres + pgvector service.
+      - run: pytest -q --cov --cov-report=term --cov-report=markdown:coverage.md
+      - name: Coverage summary
+        if: matrix.python == '3.12'
+        run: cat coverage.md >> "$GITHUB_STEP_SUMMARY"
+
+  docker:
+    runs-on: ubuntu-latest
+    needs: lint
+    steps:
+      - uses: actions/checkout@v5
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          tags: vectormatch:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
