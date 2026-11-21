@@ -1,0 +1,45 @@
+{
+  "base_model": "BAAI/bge-small-en-v1.5",
+  "train_triples": 8702,
+  "epochs": 1.0,
+  "batch_size": 32,
+  "lr": 2e-05,
+  "temperature": 0.05,
+  "max_len": 256,
+  "best_step": 271,
+  "best_dev_nDCG@10": 0.6901458996588195,
+  "dev_docs": 4000,
+  "train_seconds": 12012.89306306839,
+  "loss": "InfoNCE, in-batch + 1 BM25 hard negative, category-aware false-negative masking",
+  "log": [
+    {
+      "step": 0,
+      "P@10": 0.565,
+      "nDCG@10": 0.5722611016200984
+    },
+    {
+      "step": 68,
+      "loss": 1.9253613948822021,
+      "P@10": 0.6746,
+      "nDCG@10": 0.6785215112772788
+    },
+    {
+      "step": 136,
+      "loss": 1.5598448514938354,
+      "P@10": 0.682,
+      "nDCG@10": 0.681709073363563
+    },
+    {
+      "step": 204,
+      "loss": 1.2491364479064941,
+      "P@10": 0.6888,
+      "nDCG@10": 0.6895515622613048
+    },
+    {
+      "step": 271,
+      "loss": 0.8976231217384338,
+      "P@10": 0.6888000000000001,
+      "nDCG@10": 0.6901458996588195
+    }
+  ]
+}
