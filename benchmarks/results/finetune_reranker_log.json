@@ -2,27 +2,32 @@
   "base_model": "cross-encoder/ms-marco-MiniLM-L-6-v2",
   "retriever": "data/models/bge-small-vectormatch",
   "train_triples": 8702,
-  "epochs": 0.0185,
+  "planned_epochs": 0.5,
+  "stopped_at_step": 190,
+  "stopped_early": "dev P@10 plateaued (0.701 base -> 0.708 -> 0.706); best checkpoint kept",
   "batch_size_cvs": 16,
   "lr": 3e-05,
   "max_len": 384,
   "top_n": 20,
-  "best_step": 10,
-  "best_dev_P@10": 0.72,
-  "dev_queries": 20,
-  "train_seconds": 237.3274221420288,
+  "best_step": 68,
+  "best_dev_P@10": 0.7080000000000001,
+  "dev_queries": 200,
   "loss": "BCE: positive, BM25 hard negative, in-batch random negative",
   "log": [
     {
       "step": 0,
-      "P@10": 0.7150000000000001,
-      "nDCG@10": 0.7236187626744665
+      "P@10": 0.7010000000000001,
+      "nDCG@10": 0.7017649185932276
     },
     {
-      "step": 10,
-      "loss": 0.8497748970985413,
-      "P@10": 0.72,
-      "nDCG@10": 0.7238746929245866
+      "step": 68,
+      "P@10": 0.7080000000000001,
+      "nDCG@10": 0.708052867634758
+    },
+    {
+      "step": 136,
+      "P@10": 0.706,
+      "nDCG@10": 0.7100181496789745
     }
   ]
 }

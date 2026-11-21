@@ -21,9 +21,19 @@ def truncate_pair(cv: str, job: str) -> tuple[str, str]:
 
 @lru_cache(maxsize=2)
 def _model(name: str, max_length: int):
+    import warnings
+
     from sentence_transformers import CrossEncoder
 
-    return CrossEncoder(name, device="cpu", max_length=max_length)
+    from .config import BASE_RERANKER, FINETUNED_RERANKER
+
+    try:
+        return CrossEncoder(name, device="cpu", max_length=max_length)
+    except Exception as exc:
+        if name != FINETUNED_RERANKER:
+            raise
+        warnings.warn(f"could not load {name} ({type(exc).__name__}); falling back to {BASE_RERANKER}", stacklevel=2)
+        return CrossEncoder(BASE_RERANKER, device="cpu", max_length=max_length)
 
 
 class Reranker:

@@ -12,15 +12,29 @@ def _env(name: str, default: str) -> str:
     return os.environ.get(name, default)
 
 
+# Fine-tuned models (scripts/finetune_*.py). Resolution order: env var > local checkpoint > Hugging Face Hub.
+# If the Hub copy cannot be loaded either, the loaders fall back to BASE_* with a warning.
+FINETUNED_EMBEDDER, BASE_EMBEDDER = "KhajaHugging/bge-small-vectormatch", "BAAI/bge-small-en-v1.5"
+FINETUNED_RERANKER, BASE_RERANKER = "KhajaHugging/reranker-vectormatch", "cross-encoder/ms-marco-MiniLM-L-6-v2"
+
+
+def _model(env: str, local_dir: str, hub_id: str) -> str:
+    if env in os.environ:
+        return os.environ[env]
+    local = Path(_env("VM_DATA_DIR", str(ROOT / "data"))) / "models" / local_dir
+    return str(local) if (local / "config.json").exists() else hub_id
+
+
 @dataclass(frozen=True)
 class Settings:
     data_dir: Path = field(default_factory=lambda: Path(_env("VM_DATA_DIR", str(ROOT / "data"))))
-    embed_model: str = field(default_factory=lambda: _env("VM_EMBED_MODEL", "BAAI/bge-small-en-v1.5"))
-    rerank_model: str = field(default_factory=lambda: _env("VM_RERANK_MODEL", "cross-encoder/ms-marco-MiniLM-L-6-v2"))
+    embed_model: str = field(default_factory=lambda: _model("VM_EMBED_MODEL", "bge-small-vectormatch", FINETUNED_EMBEDDER))
+    rerank_model: str = field(default_factory=lambda: _model("VM_RERANK_MODEL", "reranker-vectormatch", FINETUNED_RERANKER))
     rerank_max_length: int = field(default_factory=lambda: int(_env("VM_RERANK_MAX_LEN", "384")))
     max_seq_length: int = field(default_factory=lambda: int(_env("VM_MAX_SEQ_LEN", "256")))
-    # Dense:BM25 weight in Reciprocal Rank Fusion, tuned on the dev split (benchmarks/results/quality_fusion_sweep.csv)
-    dense_weight: float = field(default_factory=lambda: float(_env("VM_DENSE_WEIGHT", "2.0")))
+    # Dense:BM25 weight in Reciprocal Rank Fusion, tuned on the dev split for the fine-tuned embedder
+    # (benchmarks/results/quality_fusion_sweep.csv)
+    dense_weight: float = field(default_factory=lambda: float(_env("VM_DENSE_WEIGHT", "1.5")))
     default_backend: str = field(default_factory=lambda: _env("VM_BACKEND", "faiss"))
 
     # Server-based backends (optional; embedded mode is used when unset)

@@ -55,6 +55,8 @@ def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--models", nargs="+", default=["sentence-transformers/all-MiniLM-L6-v2", "BAAI/bge-small-en-v1.5"])
     ap.add_argument("--rerank-queries", type=int, default=500, help="test queries to rerank (0 = skip)")
+    ap.add_argument("--rerankers", nargs="+", default=["cross-encoder/ms-marco-MiniLM-L-6-v2"],
+                    help="cross-encoders to compare on the test split")
     ap.add_argument("--weights", type=float, nargs="+", default=[0.5, 1.0, 1.5, 2.0, 3.0, 5.0])
     ap.add_argument("--rerank-top-n", type=int, default=20)
     args = ap.parse_args()
@@ -109,19 +111,22 @@ def main() -> None:
     _, best_slug, best_w, best_hybrid = best
     test_q, test_runs = qt[test], best_hybrid[test]
     n = min(args.rerank_queries, len(test_q))
-    rr = Reranker()
-    t0 = time.perf_counter()
-    reranked = []
-    for q, hits in zip(test_q[:n], test_runs[:n]):
-        head = hits[: args.rerank_top_n]
-        s = rr.scores(q, [jt[h.doc_id] for h in head])
-        reranked.append([head[i] for i in np.argsort(-s)] + hits[args.rerank_top_n:])
-    dt = time.perf_counter() - t0
-    print(f"rerank of {n} queries in {dt:.0f}s ({dt / max(n, 1) * 1000:.0f} ms/query)")
-    if n:
-        rows.append({"method": f"Hybrid RRF (w={best_w:g}) + cross-encoder rerank top-{args.rerank_top_n}"
+    rerank_meta = {}
+    for rr_name in (args.rerankers if n else []):
+        rr = Reranker(rr_name)
+        t0 = time.perf_counter()
+        reranked = []
+        for q, hits in zip(test_q[:n], test_runs[:n]):
+            head = hits[: args.rerank_top_n]
+            s = rr.scores(q, [jt[h.doc_id] for h in head])
+            reranked.append([head[i] for i in np.argsort(-s)] + hits[args.rerank_top_n:])
+        dt = time.perf_counter() - t0
+        label = "fine-tuned cross-encoder" if "vectormatch" in rr_name else "off-the-shelf cross-encoder"
+        print(f"rerank ({rr_name}) of {n} queries in {dt:.0f}s ({dt / n * 1000:.0f} ms/query)")
+        rows.append({"method": f"Hybrid RRF (w={best_w:g}) + {label} rerank top-{args.rerank_top_n}"
                                + ("" if n == len(test_q) else f" [first {n} test queries]"),
                      "model": best_slug, **score(reranked, test_cats[:n], d_cats)})
+        rerank_meta[rr_name] = {"ms_per_query": dt / n * 1000}
 
     df = pd.DataFrame(rows)
     OUT.mkdir(parents=True, exist_ok=True)
@@ -142,8 +147,7 @@ def main() -> None:
             "reported_on": "test split", "n_categories_eval": len(set(q_cats)),
             "relevance": "job.category == candidate.category", "k": K, "rrf_k": 60,
             "fusion_weights_tried": args.weights, "best": {"model": best_slug, "dense_weight": best_w},
-            "rerank_top_n": args.rerank_top_n, "rerank_model": rr.model_name,
-            "rerank_ms_per_query": dt / max(n, 1) * 1000, "rerank_queries": n}
+            "rerank_top_n": args.rerank_top_n, "rerankers": rerank_meta, "rerank_queries": n}
     (OUT / "quality_meta.json").write_text(json.dumps(meta, indent=2))
     print(df.to_markdown(index=False, floatfmt=".3f"))
 

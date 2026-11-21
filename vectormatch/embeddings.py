@@ -8,6 +8,7 @@ from __future__ import annotations
 import hashlib
 import os
 import time
+import warnings
 from functools import lru_cache
 from pathlib import Path
 
@@ -23,7 +24,15 @@ os.environ.setdefault("HF_HUB_DISABLE_XET", "1")
 def _load_model(name: str, max_seq_length: int):
     from sentence_transformers import SentenceTransformer
 
-    model = SentenceTransformer(name, device="cpu")
+    from .config import BASE_EMBEDDER, FINETUNED_EMBEDDER
+
+    try:
+        model = SentenceTransformer(name, device="cpu")
+    except Exception as exc:  # e.g. fine-tuned model not published / no network: keep the app usable
+        if name != FINETUNED_EMBEDDER:
+            raise
+        warnings.warn(f"could not load {name} ({type(exc).__name__}); falling back to {BASE_EMBEDDER}", stacklevel=2)
+        model = SentenceTransformer(BASE_EMBEDDER, device="cpu")
     model.max_seq_length = max_seq_length
     return model
 
@@ -92,9 +101,16 @@ class Embedder:
         return self.embed_queries([text])[0]
 
     # ------------------------------------------------------------------ caching
+    @property
+    def cache_id(self) -> str:
+        """Model identity for the cache: a local checkpoint dir and its published Hub copy
+        (same basename, same weights) share one cache; Hub base models keep their full id."""
+        return Path(self.model_name).name if Path(self.model_name).is_dir() or self.model_name.endswith("-vectormatch") \
+            else self.model_name
+
     def cache_path(self, kind: str, texts: list[str], cache_dir: Path) -> Path:
         h = hashlib.sha1()
-        h.update(f"{self.model_name}|{self.max_seq_length}|{kind}|{len(texts)}".encode())
+        h.update(f"{self.cache_id}|{self.max_seq_length}|{kind}|{len(texts)}".encode())
         for t in texts[:50] + texts[-50:]:
             h.update(t.encode())
         slug = self.model_name.split("/")[-1]
