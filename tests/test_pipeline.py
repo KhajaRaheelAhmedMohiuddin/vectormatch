@@ -110,3 +110,21 @@ def test_llm_uses_gemini_and_degrades_gracefully(monkeypatch):
     monkeypatch.setattr(llm, "_gemini", boom)
     out = llm.explain_fit("resume", JOB, ["Python"], ["PyTorch"])
     assert out["source"] == "rule-based" and out["error"] == "LLM unavailable: TimeoutError"
+
+
+def test_finetuned_models_keep_their_family_prefix():
+    from vectormatch.embeddings import passage_prefix, query_prefix
+
+    bge = "Represent this sentence for searching relevant passages: "
+    assert query_prefix("BAAI/bge-small-en-v1.5") == bge
+    assert query_prefix("data/models/bge-small-vectormatch") == bge          # local fine-tuned path
+    assert query_prefix("KhajaHugging/bge-small-vectormatch") == bge         # published on the Hub
+    assert query_prefix("sentence-transformers/all-MiniLM-L6-v2") == ""
+    assert passage_prefix("my-org/e5-small-v2-finetuned") == "passage: "
+
+
+def test_rerank_truncation_is_shared_by_training_and_inference():
+    from vectormatch.rerank import CV_CHARS, JOB_CHARS, truncate_pair
+
+    cv, job = truncate_pair("c" * 5000, "j" * 5000)
+    assert (len(cv), len(job)) == (CV_CHARS, JOB_CHARS)

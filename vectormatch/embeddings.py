@@ -38,6 +38,25 @@ QUERY_PREFIX = {
 PASSAGE_PREFIX = {"intfloat/e5-small-v2": "passage: ", "intfloat/e5-base-v2": "passage: "}
 
 
+def _family(model_name: str) -> str | None:
+    """Map a model id *or a local fine-tuned path* to its base family, so a fine-tuned
+    bge keeps the bge query instruction it was trained with."""
+    name = model_name.lower()
+    return "bge" if "bge" in name else "e5" if "e5-" in name else None
+
+
+def query_prefix(model_name: str) -> str:
+    if model_name in QUERY_PREFIX:
+        return QUERY_PREFIX[model_name]
+    return {"bge": QUERY_PREFIX["BAAI/bge-small-en-v1.5"], "e5": "query: "}.get(_family(model_name), "")
+
+
+def passage_prefix(model_name: str) -> str:
+    if model_name in PASSAGE_PREFIX:
+        return PASSAGE_PREFIX[model_name]
+    return "passage: " if _family(model_name) == "e5" else ""
+
+
 class Embedder:
     def __init__(self, model_name: str | None = None, max_seq_length: int | None = None):
         self.model_name = model_name or settings.embed_model
@@ -62,11 +81,11 @@ class Embedder:
         return vecs.astype(np.float32)
 
     def embed_documents(self, texts: list[str], **kw) -> np.ndarray:
-        prefix = PASSAGE_PREFIX.get(self.model_name, "")
+        prefix = passage_prefix(self.model_name)
         return self._encode([prefix + t for t in texts], **kw)
 
     def embed_queries(self, texts: list[str], **kw) -> np.ndarray:
-        prefix = QUERY_PREFIX.get(self.model_name, "")
+        prefix = query_prefix(self.model_name)
         return self._encode([prefix + t for t in texts], **kw)
 
     def embed_query(self, text: str) -> np.ndarray:

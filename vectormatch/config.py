@@ -17,6 +17,7 @@ class Settings:
     data_dir: Path = field(default_factory=lambda: Path(_env("VM_DATA_DIR", str(ROOT / "data"))))
     embed_model: str = field(default_factory=lambda: _env("VM_EMBED_MODEL", "BAAI/bge-small-en-v1.5"))
     rerank_model: str = field(default_factory=lambda: _env("VM_RERANK_MODEL", "cross-encoder/ms-marco-MiniLM-L-6-v2"))
+    rerank_max_length: int = field(default_factory=lambda: int(_env("VM_RERANK_MAX_LEN", "384")))
     max_seq_length: int = field(default_factory=lambda: int(_env("VM_MAX_SEQ_LEN", "256")))
     # Dense:BM25 weight in Reciprocal Rank Fusion, tuned on the dev split (benchmarks/results/quality_fusion_sweep.csv)
     dense_weight: float = field(default_factory=lambda: float(_env("VM_DENSE_WEIGHT", "2.0")))
