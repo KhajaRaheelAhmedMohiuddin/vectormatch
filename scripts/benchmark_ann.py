@@ -21,7 +21,8 @@ import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from vectormatch.data import candidate_text, job_text, load_corpus  # noqa: E402
+from vectormatch.config import settings  # noqa: E402
+from vectormatch.data import candidate_text, job_text, load_corpus, load_jobs  # noqa: E402
 from vectormatch.embeddings import Embedder  # noqa: E402
 from vectormatch.eval.metrics import latency_summary, recall_at_k  # noqa: E402
 from vectormatch.stores import Filter, IndexConfig, get_store  # noqa: E402
@@ -83,12 +84,27 @@ def main() -> None:
     ap.add_argument("--n-queries", type=int, default=300)
     ap.add_argument("--tag", default="")
     ap.add_argument("--merge", action="store_true", help="replace only these backends' rows in existing CSVs")
+    ap.add_argument("--corpus", choices=["sample", "full"], default="sample",
+                    help="sample = the 25K evaluation corpus; full = every usable job post (~140K) for scaling")
+    ap.add_argument("--nlist", type=int, default=0, help="override IVF list count (rule of thumb ~4*sqrt(n))")
     args = ap.parse_args()
 
     import faiss
     faiss.omp_set_num_threads(1)  # single-query latency, comparable across engines
 
     corpus, queries = load_corpus()
+    if args.corpus == "full":
+        path = settings.processed_dir / "jobs_full.parquet"
+        if not path.exists():
+            full = load_jobs().reset_index(drop=True)
+            full.insert(0, "doc_id", range(len(full)))
+            full.to_parquet(path, index=False)
+        corpus = pd.read_parquet(path)
+    if args.nlist:
+        for configs in PLAN.values():
+            for cfg, _, _ in configs:
+                if "nlist" in cfg.params and cfg.kind != "hnsw":
+                    cfg.params["nlist"] = args.nlist
     emb = Embedder(args.model)
     dv = emb.embed_cached("jobs", [job_text(r) for r in corpus.to_dict("records")])
     qv_all = emb.embed_cached("queries", [candidate_text(r) for r in queries.to_dict("records")])
@@ -172,7 +188,7 @@ def main() -> None:
             "model": args.model, "queries": "real candidate-CV embeddings (not sampled from the corpus)",
             "machine": f"{platform.machine()}, {__import__('os').cpu_count()} vCPU, Python {platform.python_version()}",
             "client": "single client, sequential queries, FAISS OMP threads=1",
-            "filter_selectivity": fsel,
+            "corpus": args.corpus, "filter_selectivity": fsel,
             "avg_filtered_candidates": {k: float(np.mean([len(t) for t in v])) for k, v in ftruth.items()}}
     (OUT / f"ann_meta{tag}.json").write_text(json.dumps(meta, indent=2))
 
