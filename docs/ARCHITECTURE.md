@@ -12,7 +12,7 @@
           ┌─────────────────────────────────────┼─────────────────────────────────────┐
           ▼                                     ▼                                     ▼
   Embedder (sentence-transformers)      BM25Index (rank-bm25)              Filter (category, exp, English)
-  all-MiniLM-L6-v2 / bge-small,          lexical recall, same filter          │ translated per backend
+  fine-tuned bge-small (default),         lexical recall, same filter          │ translated per backend
   L2-normalised → cosine == dot          applied as a boolean mask            ▼
           │                                     │                 FAISS IDSelector · Qdrant FieldCondition
           ▼                                     │                 SQL WHERE · Chroma where · Lance SQL ·
@@ -40,6 +40,9 @@
 | **Real CV embeddings as benchmark queries** | Many ANN benchmarks query with vectors sampled from the corpus, which overstates recall. Our queries come from a different distribution (CVs vs job posts), as in production. |
 | **Hybrid BM25 + dense via RRF** | Rank-based fusion needs no score calibration between BM25 (unbounded) and cosine ([-1, 1]). |
 | **Filters as a first-class abstraction** | Filtered ANN is where engines differ the most (pre-filter vs post-filter vs filterable graph). The benchmark measures recall and "short result" rate under selective filters. |
+| **Fine-tune the embedder, not just the pipeline** | Tuning fusion weights and adding a reranker moved test P@10 by ≈ +0.01–0.02; fine-tuning the 33M-parameter embedder on in-domain pairs moved it by +0.09. Domain adaptation of the retriever was the highest-leverage change. |
+| **Category-aware in-batch negatives** | With 40 categories and batches of 32, many in-batch "negatives" are actually correct matches (same category). Masking them out avoids teaching the model to push relevant jobs away. |
+| **Leak-free, asserted** | Training CVs/jobs come from pools that exclude the evaluation CVs and the search corpus, and the build script fails if any overlap appears. Checkpoints are chosen on dev; test is run once. |
 | **Deterministic skill extraction, optional LLM** | Fast, free, testable; the app never fails or hallucinates when no API key is set. The LLM prompt is versioned and grounded in the two texts only. |
 | **Embedded modes by default, servers via docker-compose** | `pytest` runs all six engines on a laptop with no services (pgvector tests are skipped if Postgres is absent); `docker compose up` gives real Qdrant and Postgres servers. |
 

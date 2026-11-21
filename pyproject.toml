@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "vectormatch"
-version = "1.0.0"
+version = "1.1.0"
 description = "Hybrid semantic job matching with six interchangeable vector databases, benchmarked head to head."
 readme = "README.md"
 license = "MIT"

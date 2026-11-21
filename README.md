@@ -20,33 +20,38 @@
 
 Paste a resume and VectorMatch returns ranked, explainable job matches from **25,000 real job posts**, plus a report of the skills those jobs ask for that the resume doesn't show.
 
-Under the hood, one `VectorStore` interface runs identical data through **FAISS, Qdrant, pgvector, Chroma, LanceDB and Milvus**. Every engine passes the same contract tests and is measured by the same harness, so questions like *"pgvector or Qdrant?"* and *"what does product quantisation cost?"* get answered with numbers.
+Retrieval runs on an embedding model **fine-tuned for CV→job matching** ([`bge-small-vectormatch`](https://huggingface.co/KhajaHugging/bge-small-vectormatch)), fused with BM25. Under the hood, one `VectorStore` interface runs identical data through **FAISS, Qdrant, pgvector, Chroma, LanceDB and Milvus**. Every engine passes the same contract tests and is measured by the same harness, so questions like *"pgvector or Qdrant?"*, *"what does product quantisation cost?"* and *"is fine-tuning worth it?"* get answered with numbers.
 
 ## ✨ Results at a glance
 
 | | Result |
 |---|---|
-| 🎯 **Retrieval quality** | Tuned hybrid search beats keyword search by **+33% P@10** on 1,000 real CVs (held-out test split) |
+| 🧠 **Fine-tuned embedder** | Contrastive fine-tuning with BM25 hard negatives and category-aware masking: **+15% P@10** over the best off-the-shelf system and **+53% over keyword search** (0.436 → 0.667, held-out test split) |
+| 🎯 **Honest evaluation** | 1,000 real CVs, dev/test split, leak-free training data (asserted disjoint); negative results reported too (naive hybrid fusion and rerankers did *not* help) |
 | ⚡ **Throughput** | **5,000 QPS at 0.955 recall@10** with FAISS HNSW, ~10× exact search |
 | 🐘 **pgvector** | **~1 ms p50 at 0.97 recall**, inside plain PostgreSQL |
 | 🗜️ **Compression** | IVF-PQ index **17.5× smaller**; full-vector refine restores recall from 0.56 to **0.98** |
 | 🔍 **Filtered search** | Under selective filters, HNSW returned **fewer than k results on 40%** of queries in two engines; pgvector's planner avoided it by switching to an exact scan (`EXPLAIN` verified) |
 | 🚀 **Engineering** | BM25 rewritten as a sparse matrix: **640× faster** (505 → 0.8 ms) with identical scores; resume match end to end **115 ms p50** |
 
+<p align="center"><img src="docs/img/quality.png" alt="Retrieval quality ladder: BM25 0.436, off-the-shelf vectors 0.566, hybrid 0.579, fine-tuned vectors 0.664, fine-tuned hybrid 0.667" width="80%"></p>
+
 <p align="center"><img src="docs/img/recall_vs_qps.png" alt="Recall vs QPS for six vector databases across HNSW, IVF-Flat and IVF-PQ" width="100%"></p>
 
 <details>
-<summary><b>Retrieval quality table</b> (1,000 real CVs → 25K jobs, relevance = same role category)</summary>
+<summary><b>Retrieval quality table</b> (500 held-out CVs → 25K jobs, relevance = same role category)</summary>
 
-| Method | Model | P@10 | nDCG@10 | MRR |
-|---|---|---:|---:|---:|
-| BM25 (keyword) | – | 0.436 | 0.439 | 0.575 |
-| Dense (vector) | bge-small-en-v1.5 | 0.566 | 0.570 | 0.695 |
-| Hybrid RRF, equal weights | bge-small-en-v1.5 | 0.561 | 0.566 | 0.692 |
-| **Hybrid RRF, dense weight 2 (tuned on dev)** | **bge-small-en-v1.5** | **0.579** | **0.581** | **0.698** |
-| + cross-encoder rerank (top-20) | bge-small-en-v1.5 | 0.581 | 0.584 | 0.701 |
+| Method | Model | P@10 | nDCG@10 | MRR | Hit@1 |
+|---|---|---:|---:|---:|---:|
+| BM25 (keyword) | – | 0.436 | 0.439 | 0.575 | 0.444 |
+| Dense (vector) | bge-small-en-v1.5 | 0.566 | 0.570 | 0.695 | 0.598 |
+| Hybrid RRF, dense weight 2 (dev-tuned) | bge-small-en-v1.5 | 0.579 | 0.581 | 0.698 | 0.596 |
+| Dense (vector) | **bge-small-vectormatch** | 0.664 | 0.661 | 0.740 | 0.642 |
+| Hybrid RRF, equal weights | bge-small-vectormatch | 0.616 | 0.626 | 0.746 | 0.654 |
+| **Hybrid RRF, dense weight 1.5 (dev-tuned)** | **bge-small-vectormatch** | **0.667** | **0.667** | **0.755** | **0.666** |
+| + cross-encoder rerank (off-the-shelf / fine-tuned) | bge-small-vectormatch | 0.665 / 0.669 | 0.668 / 0.668 | 0.767 / 0.758 | 0.676 / 0.662 |
 
-Naive equal-weight fusion is *worse* than dense alone. Weighting the stronger retriever fixes it. The off-the-shelf reranker adds +0.2 points for ~0.9 s/query, so it is off by default.
+Equal-weight fusion is *worse* than dense alone; weighting the stronger retriever fixes it. Once the embedder is fine-tuned, rerankers (even one fine-tuned on the same data) add nothing measurable for ~750 ms/query, so reranking is off by default.
 </details>
 
 <details>
@@ -64,7 +69,7 @@ Naive equal-weight fusion is *worse* than dense alone. Weighting the stronger re
 Qdrant was measured in embedded mode (exact search only); see [limitations](#-limitations).
 </details>
 
-➡️ **Methodology, all tables, filtered-search analysis and query plans: [docs/BENCHMARKS.md](docs/BENCHMARKS.md)**
+➡️ **Methodology, fine-tuning details, all tables, filtered-search analysis and query plans: [docs/BENCHMARKS.md](docs/BENCHMARKS.md)**
 
 ## 🗄️ Supported vector databases
 
@@ -83,11 +88,11 @@ Switching engines is one word: `VM_BACKEND=pgvector make api`, or `"backend": "p
 
 ```mermaid
 flowchart LR
-    Q[Resume or query] --> E[Embedder<br/>bge-small, normalised]
+    Q[Resume or query] --> E[Fine-tuned embedder<br/>bge-small-vectormatch]
     Q --> B[BM25<br/>sparse matrix]
     E --> VS{{VectorStore interface}}
     VS --> F[FAISS] & QD[Qdrant] & PG[pgvector] & CH[Chroma] & LA[LanceDB] & MI[Milvus]
-    F & QD & PG & CH & LA & MI --> R[Weighted RRF<br/>dense 2 : 1 BM25]
+    F & QD & PG & CH & LA & MI --> R[Weighted RRF<br/>dense 1.5 : 1 BM25]
     B --> R
     FL[Filter: category · experience · English] -.native translation.-> VS
     FL -.mask.-> B
@@ -107,7 +112,7 @@ git clone https://github.com/KhajaRaheelAhmedMohiuddin/vectormatch && cd vectorm
 python -m venv .venv && source .venv/bin/activate
 make install   # pinned deps + package
 make data      # download dataset, embed 25K jobs + 1K CVs (~25 min on 4 CPUs)
-make ui        # http://localhost:8501
+make ui        # http://localhost:8501 (uses the fine-tuned model from the Hugging Face Hub)
 ```
 
 Full stack with real Qdrant and PostgreSQL/pgvector servers:
@@ -148,7 +153,7 @@ make test   # pgvector tests run when PG_DSN points at Postgres + pgvector, else
 vectormatch/
 ├── stores/          one adapter per engine behind base.VectorStore (+ Filter, IndexConfig)
 ├── engine.py        hybrid retrieval, filters, rerank, resume matching
-├── embeddings.py    sentence-transformers, normalised, cached to .npy
+├── embeddings.py    sentence-transformers, normalised, cached to .npy; fine-tuned model with base fallback
 ├── sparse.py        BM25 as a precomputed sparse matrix
 ├── fusion.py        weighted Reciprocal Rank Fusion
 ├── rerank.py        cross-encoder
@@ -157,7 +162,10 @@ vectormatch/
 └── eval/metrics.py  P@k, nDCG, MRR, recall@k, latency percentiles
 api/                 FastAPI service
 ui/                  Streamlit app
-scripts/             prepare_data · eval_quality · benchmark_ann · make_charts
+scripts/             prepare_data · build_training_set · finetune_embedder · finetune_reranker ·
+                     eval_quality · benchmark_ann · make_charts · build_space
+space/               Gradio app for the Hugging Face Space (live demo)
+hub/                 model card for the published embedder
 benchmarks/results/  every number in the docs, as CSV/JSON
 tests/               contract · unit · API · UI tests
 ```
@@ -170,9 +178,11 @@ tests/               contract · unit · API · UI tests
 
 ## 🗺️ Roadmap
 
-- [ ] Fine-tune the embedder and cross-encoder on CV→job pairs, with hard negatives mined from BM25
+- [x] Fine-tune the embedder on CV→job pairs with BM25 hard negatives (+15% P@10)
+- [x] Fine-tune the cross-encoder (measured: no gain once the retriever is fine-tuned)
+- [x] Scale benchmark to the full ~142K-job corpus
 - [ ] Qdrant server, Pinecone and Weaviate adapters; pgvector 0.8 iterative scans for filtered HNSW
-- [ ] Scale benchmark to 1M+ vectors; multi-threaded throughput
+- [ ] 1M+ vectors and multi-threaded throughput; Matryoshka / int8 embeddings for memory
 - [ ] Multi-vector job representation (title / requirements / responsibilities)
 
 ## 📜 License & acknowledgements

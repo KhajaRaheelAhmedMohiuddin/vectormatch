@@ -128,3 +128,49 @@ def test_rerank_truncation_is_shared_by_training_and_inference():
 
     cv, job = truncate_pair("c" * 5000, "j" * 5000)
     assert (len(cv), len(job)) == (CV_CHARS, JOB_CHARS)
+
+
+def test_model_resolution_prefers_env_then_local_then_hub(tmp_path, monkeypatch):
+    from vectormatch import config
+
+    monkeypatch.delenv("VM_EMBED_MODEL", raising=False)
+    monkeypatch.setenv("VM_DATA_DIR", str(tmp_path))
+    assert config._model("VM_EMBED_MODEL", "bge-small-vectormatch", "hub/id") == "hub/id"   # nothing local
+    (tmp_path / "models" / "bge-small-vectormatch").mkdir(parents=True)
+    (tmp_path / "models" / "bge-small-vectormatch" / "config.json").write_text("{}")
+    assert config._model("VM_EMBED_MODEL", "bge-small-vectormatch", "hub/id").endswith("models/bge-small-vectormatch")
+    monkeypatch.setenv("VM_EMBED_MODEL", "my/model")
+    assert config._model("VM_EMBED_MODEL", "bge-small-vectormatch", "hub/id") == "my/model"      # env wins
+
+
+def test_cache_is_shared_between_local_checkpoint_and_hub_copy(tmp_path):
+    local = tmp_path / "bge-small-vectormatch"
+    local.mkdir()
+    texts = ["a job", "another job"]
+    p_local = Embedder(str(local)).cache_path("jobs", texts, tmp_path)
+    p_hub = Embedder("KhajaHugging/bge-small-vectormatch").cache_path("jobs", texts, tmp_path)
+    p_base = Embedder("BAAI/bge-small-en-v1.5").cache_path("jobs", texts, tmp_path)
+    assert p_local == p_hub != p_base
+
+
+def test_finetuned_embedder_falls_back_to_base(monkeypatch):
+    import sentence_transformers
+
+    from vectormatch import embeddings
+    from vectormatch.config import BASE_EMBEDDER, FINETUNED_EMBEDDER
+
+    loaded = []
+
+    class FakeST:
+        def __init__(self, name, device="cpu"):
+            if name == FINETUNED_EMBEDDER:
+                raise OSError("not published yet")
+            loaded.append(name)
+            self.max_seq_length = 0
+
+    monkeypatch.setattr(sentence_transformers, "SentenceTransformer", FakeST)
+    embeddings._load_model.cache_clear()
+    with pytest.warns(UserWarning, match="falling back"):
+        embeddings._load_model(FINETUNED_EMBEDDER, 128)
+    assert loaded == [BASE_EMBEDDER]
+    embeddings._load_model.cache_clear()

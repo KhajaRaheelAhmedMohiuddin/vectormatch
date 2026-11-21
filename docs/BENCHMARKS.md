@@ -4,10 +4,11 @@ Every number here is produced by scripts in this repo and stored as CSV/JSON in 
 Reproduce everything with:
 
 ```bash
-make data    # download + embed (bge-small, MiniLM)
-make eval    # retrieval quality  -> benchmarks/results/quality*.csv
-make bench   # ANN + filtered ANN -> benchmarks/results/ann*.csv
-make charts  # -> docs/img/*.png
+make data      # download + embed (bge-small, MiniLM)
+make finetune  # leak-free training set + fine-tune the embedder (~3.5 h on 4 CPUs)
+make eval      # retrieval quality  -> benchmarks/results/quality*.csv
+make bench     # ANN + filtered ANN -> benchmarks/results/ann*.csv
+make charts    # -> docs/img/*.png
 ```
 
 ## Setup
@@ -18,32 +19,50 @@ make charts  # -> docs/img/*.png
 | Queries | 1,000 real candidate CVs ([companion dataset](https://huggingface.co/datasets/lang-uk/recruitment-dataset-candidate-profiles-english)), 25 per category, 40 categories ("Other" excluded) |
 | Relevance | `job.category == candidate.category`, labels from the dataset itself (no LLM grading) |
 | Protocol | 50/50 dev/test split of the queries. Hyperparameters (fusion weight) tuned on dev, all reported numbers on test |
-| Embeddings | `BAAI/bge-small-en-v1.5` and `sentence-transformers/all-MiniLM-L6-v2` (384-d, L2-normalised, max 256 tokens) |
+| Embeddings | `BAAI/bge-small-en-v1.5`, `sentence-transformers/all-MiniLM-L6-v2` and the fine-tuned [`bge-small-vectormatch`](https://huggingface.co/KhajaHugging/bge-small-vectormatch) (384-d, L2-normalised, max 256 tokens). ANN benchmarks use MiniLM vectors. |
 | ANN ground truth | Exact inner-product top-10 (numpy); queries are CV embeddings, not corpus samples |
 | Hardware | 4 vCPU x86_64 cloud VM, Python 3.13, single client, sequential queries, FAISS OMP threads = 1 |
 | Versions | FAISS 1.16 · qdrant-client 1.20 (embedded) · pgvector 0.6 on PostgreSQL 16 · Chroma 1.5 · LanceDB 0.41 · Milvus Lite 3.2 |
 
 
-All numbers below are measured, not estimated. Reproduce them with `make data eval bench`.
-Machine: 4 vCPU cloud VM, single client, sequential queries.
-
 ## 1. Retrieval quality: does a candidate's CV retrieve jobs in their own field?
 
-Both CVs and jobs carry the dataset's own `Primary Keyword` label (Python, DevOps, QA, …), so relevance is objective rather than graded by an LLM. The 1,000 CVs are split 50/50: the fusion weight is tuned on **dev**, and every number below is on held-out **test**.
+Both CVs and jobs carry the dataset's own `Primary Keyword` label (Python, DevOps, QA, …), so relevance is objective rather than graded by an LLM. The 1,000 CVs are split 50/50: fusion weights and fine-tuning checkpoints are chosen on **dev**, and every number below is on the held-out **test** half.
 
-| Method | Model | P@10 | nDCG@10 | MRR |
-|---|---|---:|---:|---:|
-| BM25 (keyword) | – | 0.436 | 0.439 | 0.575 |
-| Dense (vector) | all-MiniLM-L6-v2 | 0.561 | 0.565 | 0.681 |
-| Dense (vector) | bge-small-en-v1.5 | 0.566 | 0.570 | 0.695 |
-| Hybrid RRF, equal weights | bge-small-en-v1.5 | 0.561 | 0.566 | 0.692 |
-| **Hybrid RRF, dense weight 2 (tuned on dev)** | **bge-small-en-v1.5** | **0.579** | **0.581** | **0.698** |
-| + cross-encoder rerank (top-20) | bge-small-en-v1.5 | 0.581 | 0.584 | 0.701 |
+![Quality ladder](img/quality.png)
+
+| Method | Model | P@10 | nDCG@10 | MRR | Hit@1 |
+|---|---|---:|---:|---:|---:|
+| BM25 (keyword) | – | 0.436 | 0.439 | 0.575 | 0.444 |
+| Dense (vector) | all-MiniLM-L6-v2 | 0.561 | 0.565 | 0.681 | 0.586 |
+| Dense (vector) | bge-small-en-v1.5 | 0.566 | 0.570 | 0.695 | 0.598 |
+| Hybrid RRF, equal weights | bge-small-en-v1.5 | 0.561 | 0.566 | 0.692 | 0.590 |
+| Hybrid RRF, dense weight 2 (dev-tuned) | bge-small-en-v1.5 | 0.579 | 0.581 | 0.698 | 0.596 |
+| Dense (vector) | **bge-small-vectormatch (fine-tuned)** | 0.664 | 0.661 | 0.740 | 0.642 |
+| Hybrid RRF, equal weights | bge-small-vectormatch | 0.616 | 0.626 | 0.746 | 0.654 |
+| **Hybrid RRF, dense weight 1.5 (dev-tuned)** | **bge-small-vectormatch** | **0.667** | **0.667** | **0.755** | **0.666** |
+| + off-the-shelf cross-encoder rerank (top-20) | bge-small-vectormatch | 0.665 | 0.668 | 0.767 | 0.676 |
+| + fine-tuned cross-encoder rerank (top-20) | bge-small-vectormatch | 0.669 | 0.668 | 0.758 | 0.662 |
 
 **Findings**
-* Vector search beats keyword search by **+33% relative P@10** (0.436 → 0.579).
-* **Naive hybrid search can hurt.** Equal-weight RRF was *worse* than dense alone, because BM25 is much weaker on long, noisy CVs. Weighting the dense list 2:1 (chosen on the dev split) makes hybrid the best method.
-* An off-the-shelf MS-MARCO cross-encoder adds only +0.2 points for **~0.9 s/query** on CPU, because it was trained on web queries, not CV→job matching. It is therefore **off by default**. Fine-tuning a reranker on CV/job pairs is the obvious next step.
+* **Fine-tuning the embedder is the biggest single gain: +15% relative P@10** over the best off-the-shelf system (0.579 → 0.667), and **+53% over keyword search**. The fine-tuned model *alone* (0.664) beats every off-the-shelf configuration, hybrid included, at the same size and latency.
+* **Naive hybrid search can hurt.** Equal-weight RRF is *worse* than dense alone for every model, because BM25 is much weaker on long, noisy CVs. A dev-tuned weight (2:1 base, 1.5:1 fine-tuned) makes hybrid the best method. See the sweep in [`quality_fusion_sweep.csv`](../benchmarks/results/quality_fusion_sweep.csv).
+* **Rerankers stop paying off once the retriever is fine-tuned.** Both the off-the-shelf MS-MARCO cross-encoder and one fine-tuned on the same CV→job triples land within ±0.01 P@10 of no reranking, at ~750 ms/query on CPU. Reranking is therefore off by default; it slightly improves top-1 (Hit@1 0.666 → 0.676) when that matters more than latency.
+
+### How the embedder was fine-tuned
+
+![Fine-tuning curve](img/finetune_curve.png)
+
+| | |
+|---|---|
+| Training data | 8,702 (CV, same-category job, hard-negative job) triples built by [`scripts/build_training_set.py`](../scripts/build_training_set.py) from 182K unused CVs and 110K unused jobs. The script **asserts** zero overlap (by id and exact text) with the evaluation CVs and the search corpus. |
+| Hard negatives | For each CV, the top BM25-ranked job from a *different* category: lexically similar, wrong role. |
+| Loss | InfoNCE (τ = 0.05) over in-batch + hard negatives, with **category-aware false-negative masking**: other in-batch jobs of the CV's own category are correct matches, so their logits are masked instead of being pushed away. |
+| Optimisation | 1 epoch, batch 32 CVs (96 texts/step), AdamW lr 2e-5, 10% warm-up, linear decay, 256 tokens. |
+| Memory | SDPA attention + gradient checkpointing: peak RAM **14 GB → 3.9 GB**, so it trains on a 4-vCPU CPU machine (3.3 h). |
+| Selection | Best checkpoint on dev (P@10 0.565 → 0.689), then a single test run. |
+
+The reranker was fine-tuned the same way ([`scripts/finetune_reranker.py`](../scripts/finetune_reranker.py), BCE on positives, BM25 hard negatives and in-batch negatives). Dev P@10 plateaued at 0.708 vs 0.701 for the base model, so training was stopped at step 190 of 271 ([log](../benchmarks/results/finetune_reranker_log.json)).
 
 ## 2. ANN benchmark: six vector databases, same 25K × 384-d vectors
 
