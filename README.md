@@ -10,7 +10,7 @@
 ![Ruff](https://img.shields.io/badge/lint-ruff-261230)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
-**[Results](#-results-at-a-glance) · [Architecture](#-architecture) · [Quick start](#-quick-start) · [Full benchmarks](docs/BENCHMARKS.md) · [Design decisions](docs/ARCHITECTURE.md)**
+**[🚀 Live demo](https://huggingface.co/spaces/KhajaHugging/vectormatch) · [🤗 Fine-tuned model](https://huggingface.co/KhajaHugging/bge-small-vectormatch) · [Results](#-results-at-a-glance) · [Architecture](#-architecture) · [Quick start](#-quick-start) · [Full benchmarks](docs/BENCHMARKS.md) · [Design decisions](docs/ARCHITECTURE.md)**
 
 <img src="docs/img/demo.gif" alt="VectorMatch demo: paste a resume, get ranked jobs and a skill-gap report, browse the benchmarks" width="900">
 
@@ -31,12 +31,15 @@ Retrieval runs on an embedding model **fine-tuned for CV→job matching** ([`bge
 | ⚡ **Throughput** | **5,000 QPS at 0.955 recall@10** with FAISS HNSW, ~10× exact search |
 | 🐘 **pgvector** | **~1 ms p50 at 0.97 recall**, inside plain PostgreSQL |
 | 🗜️ **Compression** | IVF-PQ index **17.5× smaller**; full-vector refine restores recall from 0.56 to **0.98** |
-| 🔍 **Filtered search** | Under selective filters, HNSW returned **fewer than k results on 40%** of queries in two engines; pgvector's planner avoided it by switching to an exact scan (`EXPLAIN` verified) |
+| 🔍 **Filtered search** | Under selective filters, HNSW returned **fewer than k results on 40%** of queries in two engines, worsening to **65% at 142K** vectors; pre-filtering engines stayed accurate. pgvector's planner switches between HNSW and exact scans based on the *indexed* predicate only (`EXPLAIN` verified) |
+| 📈 **Scale** | Re-run on all **141,846** jobs: exact search slowed 10.6×, HNSW stayed sub-millisecond (0.38 ms at 0.955 recall), and its edge over exact search grew from **11× to 53×** |
 | 🚀 **Engineering** | BM25 rewritten as a sparse matrix: **640× faster** (505 → 0.8 ms) with identical scores; resume match end to end **115 ms p50** |
 
 <p align="center"><img src="docs/img/quality.png" alt="Retrieval quality ladder: BM25 0.436, off-the-shelf vectors 0.566, hybrid 0.579, fine-tuned vectors 0.664, fine-tuned hybrid 0.667" width="80%"></p>
 
 <p align="center"><img src="docs/img/recall_vs_qps.png" alt="Recall vs QPS for six vector databases across HNSW, IVF-Flat and IVF-PQ" width="100%"></p>
+
+<p align="center"><img src="docs/img/scale_filtered.png" alt="Selective-filter recall at 25K vs 142K vectors per engine" width="85%"></p>
 
 <details>
 <summary><b>Retrieval quality table</b> (500 held-out CVs → 25K jobs, relevance = same role category)</summary>
@@ -140,8 +143,9 @@ Each result includes its rank in the dense and BM25 lists, matched and missing s
 
 - **Contract tests**: every backend must equal brute-force search for exact indexes, reach ≥ 0.9 recall for ANN indexes, and never return a document that violates a filter.
 - **Parity test**: the sparse BM25 must match the reference `rank_bm25` scores.
-- **Unit, API and UI tests**: hybrid modes, filters, rerank, data pipeline, embedding cache, LLM fallback, FastAPI routes and a headless Streamlit render.
-- **CI** on Python 3.12 and 3.13 against a real `pgvector/pgvector:pg16` service, plus ruff and a Docker build. 40 tests, 87% line coverage.
+- **Unit, API and UI tests**: hybrid modes, filters, rerank, data pipeline, embedding cache, model resolution and fallback, LLM fallback, FastAPI routes and a headless Streamlit render.
+- **Leakage guard**: the training-set builder asserts zero overlap with evaluation CVs and the search corpus.
+- **CI** on Python 3.12 and 3.13 against a real `pgvector/pgvector:pg16` service, plus ruff and a Docker build. 45 tests, 86% line coverage.
 
 ```bash
 make test   # pgvector tests run when PG_DSN points at Postgres + pgvector, else they are skipped
@@ -173,8 +177,8 @@ tests/               contract · unit · API · UI tests
 ## ⚠️ Limitations
 
 - **Relevance is a proxy.** A "Python" CV can legitimately fit a "Data Science" job, so absolute P@10 is conservative. The relative ordering of methods is the signal.
-- **Scale and hardware.** Results are for 25K vectors on a 4-vCPU VM with a single client. Client/server engines pay protocol overhead that in-process FAISS does not.
-- **Qdrant** was benchmarked in embedded mode, which is exact search only. Its HNSW numbers need the server (`docker compose up`, then `QDRANT_URL=http://localhost:6333 make bench`).
+- **Scale and hardware.** Results are for 25K and 142K vectors on a 4-vCPU VM with a single client. Client/server engines pay protocol overhead that in-process FAISS does not, and Milvus Lite is the embedded development build, not a Milvus cluster.
+- **Qdrant** was benchmarked in embedded mode, which is exact search only (and left out of the 142K run). Its HNSW numbers need the server (`docker compose up`, then `QDRANT_URL=http://localhost:6333 make bench`).
 
 ## 🗺️ Roadmap
 

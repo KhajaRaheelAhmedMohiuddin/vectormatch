@@ -131,13 +131,22 @@ Same harness, same 300 CV queries, run on **every usable job post (141,846)**: `
 | FAISS exact (flat) | 1.89 ms | 20.1 ms | 48 | 1.000 | – |
 | FAISS HNSW | 0.17 ms (ef 32) | **0.38 ms** (ef 64) | **2,566** | 0.955 | 51 s |
 | FAISS IVF-Flat | 0.29 ms | 0.65 ms | 1,527 | 0.959 | 41 s |
-%%PGVECTOR_ROWS%%| Chroma HNSW | 1.20 ms | 1.47 ms | 654 | 0.956 | 61 s |
+| pgvector HNSW | 0.96 ms (ef 32) | **2.00 ms** (ef 64) | 488 | 0.972 | 39 s |
+| pgvector IVFFlat | 1.36 ms | 2.62 ms | 373 | 0.958 | 40 s |
+| Chroma HNSW | 1.20 ms | 1.47 ms | 654 | 0.956 | 61 s |
 | LanceDB IVF-HNSW-SQ | 6.6 ms | 8.7 ms | 112 | 0.962 | 16 s |
 | Milvus Lite HNSW | 10.1 ms | 49.6 ms | 20 | 0.992 | 29 s |
 
 **Findings**
 * **ANN matters more as data grows.** Exact search slowed 10.6× (1.9 → 20.1 ms) for 5.7× more data; FAISS HNSW went from 0.17 to 0.38 ms. Its advantage over exact search grew from **~11× to ~53×**. Holding recall at 0.95 needed a larger `ef_search` (32 → 64), the knob to retune as an index grows.
 * **Filtered HNSW collapses with scale.** Under the selective filter (≈5 matching jobs per query), recall fell from 0.71 to **0.40** for FAISS HNSW and from 0.72 to **0.47** for Milvus HNSW, with 60–65% of queries returning fewer than 10 results. Engines that apply the filter first held up: LanceDB (pre-filter) 0.91, Chroma 1.00. Chroma pays in latency (**182 ms** per selective-filtered query vs 1.5 ms unfiltered), the classic pre-filter trade-off.
+* **pgvector's planner decides by the indexed predicate, not the real selectivity.** Selective-filter recall for pgvector HNSW fell from 0.96 to **0.78**. `EXPLAIN` at 142K shows why: only `category` has a B-tree, so the planner costs the query by category size alone. For a common category it picks the HNSW scan and post-filters, even when the full predicate matches 5 rows, so 23% of queries come back short. For a rare category it picks a bitmap scan plus exact sort, giving perfect recall.
+
+  ```
+  Python (5,730 rows) + exp<=1 + fluent → 5 rows match → Index Scan using …hnsw…   (ANN, then filter: short results)
+  Rust   (151 rows)   + exp<=1 + fluent → 1 row matches → Bitmap Heap Scan + sort  (exact)
+  ```
+  At 25K even "Python" was small enough for the exact path, which is why this only appears at scale. Fixes: extended statistics (`CREATE STATISTICS`), partial or composite indexes on the filter columns, or pgvector ≥ 0.8 iterative index scans.
 * **Product quantisation pays off more at scale:** FAISS IVF-PQ is **9.9 MB vs 218 MB** for raw vectors (22×, vs 17.5× at 25K).
 * **Milvus Lite is a development tool.** It slowed ~5× (10 → 50 ms) at this size; production Milvus runs as a distributed service.
 
