@@ -7,6 +7,8 @@ opposite. Fusing both (see ``fusion.py``) beats either one alone.
 from __future__ import annotations
 
 import re
+from array import array
+from collections import Counter
 
 import numpy as np
 from scipy import sparse
@@ -37,18 +39,22 @@ class BM25Index:
     def __init__(self, texts: list[str], doc_ids: list[int] | np.ndarray, k1: float = 1.5, b: float = 0.75,
                  epsilon: float = 0.25):
         self.doc_ids = np.asarray(doc_ids)
-        docs = [tokenize(t) for t in texts]
+        # Stream documents into compact typed arrays (4 bytes/entry) instead of Python lists of ints
+        # (~36 bytes/entry): building over 25K job posts drops from ~320 MB to a few tens of MB.
         self.vocab: dict[str, int] = {}
-        rows, cols, vals = [], [], []
-        for d, toks in enumerate(docs):
-            uniq, counts = np.unique(toks, return_counts=True) if toks else ([], [])
-            for t, c in zip(uniq, counts):
+        rows, cols, vals = array("i"), array("i"), array("f")
+        lengths = array("i")
+        for d, text in enumerate(texts):
+            counts = Counter(tokenize(text))
+            lengths.append(sum(counts.values()))
+            for t, c in counts.items():
                 rows.append(d)
                 cols.append(self.vocab.setdefault(t, len(self.vocab)))
                 vals.append(c)
-        n_docs = len(docs)
-        tf = sparse.csr_matrix((np.asarray(vals, dtype=np.float32), (rows, cols)), shape=(n_docs, len(self.vocab)))
-        doc_len = np.array([len(t) for t in docs], dtype=np.float32)
+        n_docs = len(lengths)
+        tf = sparse.csr_matrix((np.frombuffer(vals, dtype=np.float32), (np.frombuffer(rows, dtype=np.int32),
+                                np.frombuffer(cols, dtype=np.int32))), shape=(n_docs, len(self.vocab)))
+        doc_len = np.frombuffer(lengths, dtype=np.int32).astype(np.float32)
         avgdl = doc_len.mean() if n_docs else 1.0
         df = np.bincount(tf.indices, minlength=len(self.vocab)).astype(np.float64)
         idf = np.log(n_docs - df + 0.5) - np.log(df + 0.5)

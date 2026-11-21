@@ -139,6 +139,11 @@ def save_corpus(corpus: pd.DataFrame, queries: pd.DataFrame, out_dir: Path | Non
     queries.to_parquet(out_dir / "queries.parquet", index=False)
 
 
+def load_jobs_corpus(out_dir: Path | None = None) -> pd.DataFrame:
+    """Just the searchable job corpus (serving does not need the evaluation queries)."""
+    return pd.read_parquet((out_dir or settings.processed_dir) / "jobs.parquet")
+
+
 def load_corpus(out_dir: Path | None = None) -> tuple[pd.DataFrame, pd.DataFrame]:
     out_dir = out_dir or settings.processed_dir
     return pd.read_parquet(out_dir / "jobs.parquet"), pd.read_parquet(out_dir / "queries.parquet")

@@ -66,3 +66,16 @@ jobs:
           tags: vectormatch:ci
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+  streamlit-cloud:
+    # Mirrors Streamlit Community Cloud: clean Python 3.12, only deploy/streamlit/requirements.txt
+    # (CPU-only torch), real data bundle + published model, headless UI click, memory budget.
+    runs-on: ubuntu-latest
+    needs: lint
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - run: pip install -r deploy/streamlit/requirements.txt
+      - run: python scripts/smoke_streamlit_cloud.py --max-rss-mb 1800

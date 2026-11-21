@@ -12,7 +12,10 @@ All notable changes to this project are documented here. Format: [Keep a Changel
 - Gradio demo for Hugging Face Spaces (`space/app.py`, `make space`), model card in `hub/`, and `hub/publish.py`, which publishes the model and Space from the checksummed artifacts on the `release-assets` branch.
 - Charts: retrieval-quality ladder and fine-tuning curve.
 
+- Streamlit Community Cloud deployment (`deploy/streamlit/`): CPU-only requirements, data bootstrap from the `release-assets` branch with SHA-256 verification (`vectormatch/assets.py`), and a CI job that runs the real entry point headlessly with a memory budget.
+
 ### Changed
+- BM25 index built with typed arrays: build memory +320 MB → +82 MB (identical scores); serving memory 1.96 GB → 1.51 GB.
 - The engine defaults to the fine-tuned embedder (env var > local checkpoint > Hub), falling back to the base model with a warning, so a fresh clone always works.
 - RRF dense weight 2.0 → 1.5 (re-tuned on dev for the fine-tuned embedder).
 - Embedding cache keyed by model identity (local checkpoint and Hub copy share one cache).

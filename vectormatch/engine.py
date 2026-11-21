@@ -139,9 +139,9 @@ class SearchEngine:
 
 
 def load_engine(backend: str | None = None, model: str | None = None) -> SearchEngine:
-    from .data import load_corpus
+    from .data import load_jobs_corpus
 
-    corpus, _ = load_corpus()
+    corpus = load_jobs_corpus()
     emb = Embedder(model)
     vecs = emb.embed_cached("jobs", [job_text(r) for r in corpus.to_dict("records")])
     engine = SearchEngine(corpus, emb, vecs, backend=backend)

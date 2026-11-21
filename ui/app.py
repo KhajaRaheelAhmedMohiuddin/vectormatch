@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -19,6 +20,8 @@ from vectormatch.skills import extract_skills, overlap  # noqa: E402
 from vectormatch.stores import BACKENDS, Filter  # noqa: E402
 
 RESULTS = ROOT / "benchmarks" / "results"
+# Which engines the UI offers; hosted demos restrict this to the in-process ones (VM_UI_BACKENDS=faiss,chroma,lancedb).
+UI_BACKENDS = set(filter(None, os.environ.get("VM_UI_BACKENDS", ",".join(BACKENDS)).split(",")))
 
 
 @st.cache_resource(show_spinner="Loading 25K job embeddings, BM25 and the ANN index…")
@@ -39,7 +42,8 @@ def sidebar() -> tuple[str, Filter, bool, int]:
     e = get_engine()
     st.sidebar.header("⚙️ Retrieval settings")
     labels = {"qdrant": "qdrant (embedded = exact & slow; set QDRANT_URL for server HNSW)"}
-    backend = st.sidebar.selectbox("Vector database", sorted(BACKENDS), index=sorted(BACKENDS).index(e.default_backend),
+    backends = [b for b in sorted(BACKENDS) if b in UI_BACKENDS]
+    backend = st.sidebar.selectbox("Vector database", backends, index=backends.index(e.default_backend),
                                    format_func=lambda b: b if settings.qdrant_url else labels.get(b, b),
                                    help="Same data, same embeddings, six engines. Non-default backends are indexed on first use "
                                         "(a few seconds; pgvector needs Postgres via PG_DSN).")
@@ -95,7 +99,7 @@ def tab_match(backend, flt, rerank, k):
             st.markdown("**Skills your best-matching jobs ask for that your resume doesn't mention**")
             st.plotly_chart(px.bar(df, x="share_of_jobs", y="skill", orientation="h",
                                    labels={"share_of_jobs": "% of top matches", "skill": ""}).update_yaxes(autorange="reversed"),
-                            use_container_width=True)
+                            width="stretch")
         render_results(out, resume)
 
 
@@ -113,7 +117,7 @@ def tab_bench():
     qp = RESULTS / "quality.csv"
     if qp.exists():
         st.markdown("#### Retrieval quality — does a candidate's CV retrieve jobs in the right category?")
-        st.dataframe(pd.read_csv(qp).style.format(precision=3), use_container_width=True, hide_index=True)
+        st.dataframe(pd.read_csv(qp).style.format(precision=3), width="stretch", hide_index=True)
     ap = RESULTS / "ann.csv"
     if ap.exists():
         df = pd.read_csv(ap)
@@ -126,12 +130,12 @@ def tab_bench():
                       markers=True, log_y=True, color_discrete_map=palette,
                       hover_data=["knob", "knob_value", "p95_ms", "build_s", "size_mb"],
                       labels={"qps": "queries / second (log)", "recall@10": "recall@10 vs exact search"})
-        st.plotly_chart(fig, use_container_width=True)
-        st.dataframe(df.style.format(precision=3), use_container_width=True, hide_index=True)
+        st.plotly_chart(fig, width="stretch")
+        st.dataframe(df.style.format(precision=3), width="stretch", hide_index=True)
     fp = RESULTS / "ann_filtered.csv"
     if fp.exists():
         st.markdown("#### Filtered search — does the engine still return k correct results under a selective filter?")
-        st.dataframe(pd.read_csv(fp).style.format(precision=3), use_container_width=True, hide_index=True)
+        st.dataframe(pd.read_csv(fp).style.format(precision=3), width="stretch", hide_index=True)
     mp = RESULTS / "ann_meta.json"
     if mp.exists():
         st.json(json.loads(mp.read_text()), expanded=False)

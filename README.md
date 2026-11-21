@@ -10,7 +10,7 @@
 ![Ruff](https://img.shields.io/badge/lint-ruff-261230)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
-**[🚀 Live demo](https://huggingface.co/spaces/KhajaHugging/vectormatch) · [🤗 Fine-tuned model](https://huggingface.co/KhajaHugging/bge-small-vectormatch) · [Results](#-results-at-a-glance) · [Architecture](#-architecture) · [Quick start](#-quick-start) · [Full benchmarks](docs/BENCHMARKS.md) · [Design decisions](docs/ARCHITECTURE.md)**
+**[🤗 Fine-tuned model](https://huggingface.co/KhajaHugging/bge-small-vectormatch) · [Results](#-results-at-a-glance) · [Architecture](#-architecture) · [Quick start](#-quick-start) · [Full benchmarks](docs/BENCHMARKS.md) · [Design decisions](docs/ARCHITECTURE.md)**
 
 <img src="docs/img/demo.gif" alt="VectorMatch demo: paste a resume, get ranked jobs and a skill-gap report, browse the benchmarks" width="900">
 
@@ -125,6 +125,12 @@ docker compose up --build   # API :8000 · UI :8501 · Qdrant :6333 · Postgres 
 ```
 
 Run `make help` for every task (`eval`, `bench`, `charts`, `test`, `api`, …).
+
+### Deploy the demo (free)
+
+**Streamlit Community Cloud:** at [share.streamlit.io](https://share.streamlit.io) choose **Create app** → this repo, branch `main`, main file `deploy/streamlit/streamlit_app.py`, Python 3.12. On first start the app downloads the checksummed data bundle (25K jobs + fine-tuned embeddings) from the [`release-assets`](https://github.com/KhajaRaheelAhmedMohiuddin/vectormatch/tree/release-assets) branch and the model from the Hugging Face Hub; it is ready in under a minute. CI runs this exact setup headlessly (CPU-only PyTorch, real data, a UI click and a memory budget) on every push.
+
+**Hugging Face Spaces:** `python hub/publish.py` publishes the model and a Gradio Space (`space/app.py`).
 
 ### API example
 
