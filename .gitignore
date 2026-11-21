@@ -13,3 +13,4 @@ pgdata/
 coverage.md
 .ruff_cache/
 data/models/
+dist/

@@ -21,7 +21,13 @@
     "dense_weight": 1.5
   },
   "rerank_top_n": 20,
-  "rerank_model": "cross-encoder/ms-marco-MiniLM-L-6-v2",
-  "rerank_ms_per_query": 700.1407941440011,
+  "rerankers": {
+    "cross-encoder/ms-marco-MiniLM-L-6-v2": {
+      "ms_per_query": 748.6562137159999
+    },
+    "data/models/reranker-vectormatch": {
+      "ms_per_query": 749.2896289780037
+    }
+  },
   "rerank_queries": 500
 }

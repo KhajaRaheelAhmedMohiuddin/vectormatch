@@ -1,7 +1,7 @@
 """VectorMatch live demo (Hugging Face Space, Gradio).
 
 Runs the same engine as the repo: fine-tuned bge-small embeddings + sparse BM25, weighted RRF,
-optional fine-tuned cross-encoder, over 25K real job posts, on a choice of vector databases.
+optional cross-encoder, over 25K real job posts, on a choice of vector databases.
 All inference runs on CPU; the @spaces.GPU no-op only satisfies ZeroGPU hosting.
 """
 from __future__ import annotations
@@ -21,7 +21,6 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 os.environ.setdefault("VM_DATA_DIR", str(HERE / "data"))
 os.environ.setdefault("VM_EMBED_MODEL", "KhajaHugging/bge-small-vectormatch")
-os.environ.setdefault("VM_RERANK_MODEL", "KhajaHugging/reranker-vectormatch")
 
 import gradio as gr  # noqa: E402
 import numpy as np  # noqa: E402
@@ -106,7 +105,7 @@ def match_resume(resume: str, backend: str, rerank: bool, categories: list[str],
     Args:
         resume: Plain-text resume / CV.
         backend: Vector database: faiss, chroma, lancedb, milvus or qdrant.
-        rerank: Re-rank the top candidates with the fine-tuned cross-encoder.
+        rerank: Re-rank the top candidates with a cross-encoder.
         categories: Optional job categories to restrict to.
         max_exp: Maximum years of experience required by the job ("any" for no limit).
         k: Number of jobs to return.
@@ -131,7 +130,7 @@ def search_jobs(query: str, mode: str, backend: str, rerank: bool, categories: l
         query: What you are looking for, in natural language.
         mode: hybrid (vector + BM25), dense (vector only) or bm25 (keywords only).
         backend: Vector database: faiss, chroma, lancedb, milvus or qdrant.
-        rerank: Re-rank with the fine-tuned cross-encoder.
+        rerank: Re-rank with a cross-encoder.
         categories: Optional job categories to restrict to.
         max_exp: Maximum years of experience required ("any" for no limit).
         k: Number of jobs to return.
@@ -152,12 +151,12 @@ with gr.Blocks(title="VectorMatch") as demo:
     gr.Markdown(
         f"# 🧭 VectorMatch\n"
         f"Hybrid semantic job matching over **{len(CORPUS):,} real job posts**: fine-tuned embeddings + BM25 + "
-        f"rank fusion + fine-tuned reranker, on your choice of vector database. "
+        f"rank fusion + optional reranker, on your choice of vector database. "
         f"**[Code & benchmarks on GitHub]({REPO})**")
     with gr.Row():
         backend = gr.Dropdown(BACKENDS, value="faiss", label="Vector database",
                               info="Other engines are indexed on first use (a few seconds; qdrant embedded ≈ 30 s)")
-        rerank = gr.Checkbox(value=False, label="Fine-tuned cross-encoder rerank", info="slower, more precise")
+        rerank = gr.Checkbox(value=False, label="Cross-encoder rerank", info="≈0.7 s slower; slightly better top-1 (Hit@1 0.666 → 0.676)")
         k = gr.Slider(3, 20, value=8, step=1, label="Results")
     with gr.Row():
         categories = gr.Dropdown(CATEGORIES, multiselect=True, label="Categories (optional)")
@@ -180,7 +179,8 @@ with gr.Blocks(title="VectorMatch") as demo:
         summary2 = gr.Markdown()
         cards2 = gr.HTML()
         go2.click(search_jobs, [query, mode, backend, rerank, categories, max_exp, k], [summary2, cards2])
-        query.submit(search_jobs, [query, mode, backend, rerank, categories, max_exp, k], [summary2, cards2])
+        query.submit(search_jobs, [query, mode, backend, rerank, categories, max_exp, k], [summary2, cards2],
+                     api_visibility="private")  # same function as the button: expose it once
 
     with gr.Tab("📊 Benchmarks"):
         gr.Markdown(_bench_md())
@@ -189,4 +189,9 @@ with gr.Blocks(title="VectorMatch") as demo:
                 f"Built by Khaja Raheel Ahmed Mohiuddin · [GitHub]({REPO})")
 
 if __name__ == "__main__":
-    demo.launch(css=CSS, mcp_server=True)
+    try:  # expose the API functions as MCP tools when the extra is available
+        import mcp  # noqa: F401
+        mcp_ok = True
+    except ImportError:
+        mcp_ok = False
+    demo.launch(css=CSS, mcp_server=mcp_ok)

@@ -68,20 +68,58 @@ def recall_qps() -> None:
 
 
 def quality() -> None:
+    """The quality ladder: each step that moved held-out test P@10."""
     df = pd.read_csv(RES / "quality.csv")
-    df["label"] = df.apply(lambda r: r["method"].split(" [")[0] + ("" if r["model"] == "-" else f"  ·  {r['model']}"), axis=1)
-    full = df[~df["method"].str.contains("subset")].copy()
-    full = full.sort_values("nDCG@10")
-    fig, ax = plt.subplots(figsize=(8, 0.5 * len(full) + 1.2))
-    bars = ax.barh(full["label"], full["nDCG@10"], color="#2a78d6", height=0.6)
-    for b, v in zip(bars, full["nDCG@10"], strict=False):
-        ax.text(v + 0.005, b.get_y() + b.get_height() / 2, f"{v:.3f}", va="center", fontsize=9, color=INK)
-    ax.set_xlim(0, max(1.0, full["nDCG@10"].max() + 0.08))
-    ax.set_xlabel("nDCG@10 (relevant = job category matches candidate's category)")
-    ax.set_title("Retrieval quality on 1,000 real CVs → 25K job posts", loc="left")
+    steps = [
+        ("BM25 (keyword)", "-", "Keyword search (BM25)"),
+        ("Dense (vector)", "bge-small-en-v1.5", "Vector search (off-the-shelf bge-small)"),
+        ("Hybrid RRF, dense weight", "bge-small-en-v1.5", "Hybrid: off-the-shelf vectors + BM25"),
+        ("Dense (vector)", "bge-small-vectormatch", "Vector search (fine-tuned model)"),
+        ("Hybrid RRF, dense weight", "bge-small-vectormatch", "Hybrid: fine-tuned vectors + BM25"),
+    ]
+    rows = []
+    for method, model, label in steps:
+        m = df[df["method"].str.startswith(method) & (df["model"] == model)]
+        if len(m):
+            rows.append((label, float(m.iloc[0]["P@10"]), "vectormatch" in model))
+    if not rows:
+        return
+    fig, ax = plt.subplots(figsize=(8.6, 0.55 * len(rows) + 1.9))
+    labels = [r[0] for r in rows][::-1]
+    vals = [r[1] for r in rows][::-1]
+    colors = ["#eb6834" if r[2] else "#2a78d6" for r in rows][::-1]  # orange = fine-tuned model
+    bars = ax.barh(labels, vals, color=colors, height=0.6)
+    for b, v in zip(bars, vals):
+        ax.text(v + 0.006, b.get_y() + b.get_height() / 2, f"{v:.3f}", va="center", fontsize=9.5, color=INK)
+    ax.set_xlim(0, 0.8)
+    ax.set_xlabel("P@10 on 500 held-out CVs (relevant = same role category)")
+    ax.set_title("Retrieval quality ladder: fine-tuning gives the biggest jump", loc="left")
+    from matplotlib.patches import Patch
+    ax.legend(handles=[Patch(color="#2a78d6", label="off-the-shelf models"),
+                       Patch(color="#eb6834", label="fine-tuned embedder (this project)")],
+              loc="upper center", bbox_to_anchor=(0.35, -0.2), ncol=2, fontsize=8.5)
     ax.grid(axis="y", visible=False)
     fig.tight_layout()
     fig.savefig(OUT / "quality.png", dpi=160)
+    plt.close(fig)
+
+
+def finetune_curve() -> None:
+    import json
+
+    log = json.loads((RES / "finetune_log.json").read_text())["log"]
+    steps = [e["step"] for e in log]
+    p10 = [e["P@10"] for e in log]
+    fig, ax = plt.subplots(figsize=(7.2, 3.6))
+    ax.plot(steps, p10, color="#eb6834", lw=2, marker="o", ms=6)
+    for x, y in zip(steps, p10):
+        ax.annotate(f"{y:.3f}", (x, y), xytext=(0, 8), textcoords="offset points", ha="center", fontsize=8.5, color=INK)
+    ax.set_ylim(min(p10) - 0.03, max(p10) + 0.04)
+    ax.set_xlabel("training step (batch of 32 CVs + positives + BM25 hard negatives)")
+    ax.set_ylabel("dev P@10")
+    ax.set_title("Fine-tuning bge-small on CV→job pairs (dev split, used for checkpoint selection)", loc="left", fontsize=10)
+    fig.tight_layout()
+    fig.savefig(OUT / "finetune_curve.png", dpi=160)
     plt.close(fig)
 
 
@@ -111,7 +149,8 @@ def filtered() -> None:
 
 if __name__ == "__main__":
     OUT.mkdir(parents=True, exist_ok=True)
-    for fn, f in ((quality, "quality.csv"), (recall_qps, "ann.csv"), (filtered, "ann_filtered.csv")):
+    for fn, f in ((quality, "quality.csv"), (finetune_curve, "finetune_log.json"), (recall_qps, "ann.csv"),
+                  (filtered, "ann_filtered.csv")):
         if (RES / f).exists():
             fn()
             print("wrote", fn.__name__)

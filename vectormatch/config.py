@@ -29,7 +29,9 @@ def _model(env: str, local_dir: str, hub_id: str) -> str:
 class Settings:
     data_dir: Path = field(default_factory=lambda: Path(_env("VM_DATA_DIR", str(ROOT / "data"))))
     embed_model: str = field(default_factory=lambda: _model("VM_EMBED_MODEL", "bge-small-vectormatch", FINETUNED_EMBEDDER))
-    rerank_model: str = field(default_factory=lambda: _model("VM_RERANK_MODEL", "reranker-vectormatch", FINETUNED_RERANKER))
+    # Reranker stays the off-the-shelf model: on the test split the fine-tuned one was not better
+    # (P@10 0.669 vs 0.665, Hit@1 0.662 vs 0.676) once the retriever itself was fine-tuned.
+    rerank_model: str = field(default_factory=lambda: _env("VM_RERANK_MODEL", BASE_RERANKER))
     rerank_max_length: int = field(default_factory=lambda: int(_env("VM_RERANK_MAX_LEN", "384")))
     max_seq_length: int = field(default_factory=lambda: int(_env("VM_MAX_SEQ_LEN", "256")))
     # Dense:BM25 weight in Reciprocal Rank Fusion, tuned on the dev split for the fine-tuned embedder
