@@ -1,6 +1,7 @@
 """Publish VectorMatch to the Hugging Face Hub from your own machine.
 
-Downloads the release artifacts from GitHub and creates/updates:
+Downloads the v1.1.0 artifacts from the repo's `release-assets` branch, verifies their SHA-256
+checksums, and creates/updates:
   * model  <user>/bge-small-vectormatch   (fine-tuned embedder + model card)
   * Space  <user>/vectormatch             (Gradio live demo, ZeroGPU hardware)
 
@@ -11,6 +12,7 @@ Downloads the release artifacts from GitHub and creates/updates:
 from __future__ import annotations
 
 import argparse
+import hashlib
 import sys
 import tempfile
 import urllib.request
@@ -19,15 +21,30 @@ from pathlib import Path
 
 from huggingface_hub import HfApi
 
-RELEASE = "https://github.com/KhajaRaheelAhmedMohiuddin/vectormatch/releases/download/v1.1.0"
-ASSETS = {"model": "bge-small-vectormatch.zip", "space": "vectormatch-space.zip"}
+ASSETS_URL = "https://raw.githubusercontent.com/KhajaRaheelAhmedMohiuddin/vectormatch/release-assets"
+ASSETS = {"model": ("bge-small-vectormatch.zip", 2), "space": ("vectormatch-space.zip", 0)}  # (name, n parts)
 
 
-def fetch(name: str, dest: Path) -> Path:
-    url = f"{RELEASE}/{name}"
-    print(f"downloading {url}")
+def _checksums() -> dict[str, str]:
+    text = urllib.request.urlopen(f"{ASSETS_URL}/SHA256SUMS").read().decode()
+    return {name: digest for digest, name in (line.split() for line in text.splitlines() if line.strip())}
+
+
+def fetch(asset: str, dest: Path) -> Path:
+    """Download (and reassemble, if split) an asset, verify its checksum, unzip it."""
+    name, parts = ASSETS[asset]
     target = dest / name
-    urllib.request.urlretrieve(url, target)
+    urls = [f"{ASSETS_URL}/{name}.part{i}" for i in range(parts)] if parts else [f"{ASSETS_URL}/{name}"]
+    with open(target, "wb") as out_f:
+        for url in urls:
+            print(f"downloading {url}")
+            with urllib.request.urlopen(url) as r:
+                while chunk := r.read(1 << 20):
+                    out_f.write(chunk)
+    digest = hashlib.sha256(target.read_bytes()).hexdigest()
+    if digest != _checksums()[name]:
+        sys.exit(f"checksum mismatch for {name}: refusing to publish a corrupted file")
+    print(f"  verified sha256 {digest[:12]}…")
     out = dest / name.removesuffix(".zip")
     with zipfile.ZipFile(target) as z:
         z.extractall(out)
@@ -48,7 +65,7 @@ def main() -> None:
     with tempfile.TemporaryDirectory() as tmp:
         tmp = Path(tmp)
 
-        model_dir = fetch(ASSETS["model"], tmp)
+        model_dir = fetch("model", tmp)
         model_id = f"{user}/bge-small-vectormatch"
         api.create_repo(model_id, repo_type="model", exist_ok=True)
         api.upload_folder(repo_id=model_id, folder_path=model_dir, repo_type="model",
@@ -57,7 +74,7 @@ def main() -> None:
 
         if args.skip_space:
             return
-        space_dir = fetch(ASSETS["space"], tmp)
+        space_dir = fetch("space", tmp)
         if user != "KhajaHugging":  # the bundle points at the model id; keep it consistent for other accounts
             for f in (space_dir / "app.py", space_dir / "README.md"):
                 f.write_text(f.read_text().replace("KhajaHugging/bge-small-vectormatch", model_id))

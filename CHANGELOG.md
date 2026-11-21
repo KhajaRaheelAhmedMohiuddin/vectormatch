@@ -9,7 +9,7 @@ All notable changes to this project are documented here. Format: [Keep a Changel
 - `scripts/build_training_set.py` (asserts zero overlap with evaluation data), `scripts/finetune_embedder.py`, `scripts/finetune_reranker.py`.
 - Reranker fine-tuning experiment and its result: no measurable gain once the retriever is fine-tuned, so the off-the-shelf reranker stays (off by default).
 - Scale benchmark on the full ~142K-job corpus (`make bench-scale`).
-- Gradio demo for Hugging Face Spaces (`space/app.py`, `make space`), model card in `hub/`.
+- Gradio demo for Hugging Face Spaces (`space/app.py`, `make space`), model card in `hub/`, and `hub/publish.py`, which publishes the model and Space from the checksummed artifacts on the `release-assets` branch.
 - Charts: retrieval-quality ladder and fine-tuning curve.
 
 ### Changed
