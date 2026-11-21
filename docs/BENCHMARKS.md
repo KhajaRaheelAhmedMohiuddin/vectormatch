@@ -118,7 +118,32 @@ IVFFlat, either filter                      → Index Scan using …ivfflat… F
 
 Mitigations: raise `ef_search` or `probes`, pre-filter for highly selective predicates, partition by tenant or category, or use filter-aware engines (Qdrant server's filterable HNSW, pgvector ≥ 0.8 iterative index scans).
 
-## 4. Engineering wins
+## 4. Scaling from 25K to 142K vectors
+
+Same harness, same 300 CV queries, run on **every usable job post (141,846)**: `make bench-scale` (IVF lists 256 → 1024).
+
+![Selective-filter recall at 25K vs 142K](img/scale_filtered.png)
+
+**Speed at recall@10 ≥ 0.95 (fastest setting per engine)**
+
+| Engine / index | 25K: p50 | 142K: p50 | 142K: QPS | 142K: recall | 142K: build |
+|---|---:|---:|---:|---:|---:|
+| FAISS exact (flat) | 1.89 ms | 20.1 ms | 48 | 1.000 | – |
+| FAISS HNSW | 0.17 ms (ef 32) | **0.38 ms** (ef 64) | **2,566** | 0.955 | 51 s |
+| FAISS IVF-Flat | 0.29 ms | 0.65 ms | 1,527 | 0.959 | 41 s |
+%%PGVECTOR_ROWS%%| Chroma HNSW | 1.20 ms | 1.47 ms | 654 | 0.956 | 61 s |
+| LanceDB IVF-HNSW-SQ | 6.6 ms | 8.7 ms | 112 | 0.962 | 16 s |
+| Milvus Lite HNSW | 10.1 ms | 49.6 ms | 20 | 0.992 | 29 s |
+
+**Findings**
+* **ANN matters more as data grows.** Exact search slowed 10.6× (1.9 → 20.1 ms) for 5.7× more data; FAISS HNSW went from 0.17 to 0.38 ms. Its advantage over exact search grew from **~11× to ~53×**. Holding recall at 0.95 needed a larger `ef_search` (32 → 64), the knob to retune as an index grows.
+* **Filtered HNSW collapses with scale.** Under the selective filter (≈5 matching jobs per query), recall fell from 0.71 to **0.40** for FAISS HNSW and from 0.72 to **0.47** for Milvus HNSW, with 60–65% of queries returning fewer than 10 results. Engines that apply the filter first held up: LanceDB (pre-filter) 0.91, Chroma 1.00. Chroma pays in latency (**182 ms** per selective-filtered query vs 1.5 ms unfiltered), the classic pre-filter trade-off.
+* **Product quantisation pays off more at scale:** FAISS IVF-PQ is **9.9 MB vs 218 MB** for raw vectors (22×, vs 17.5× at 25K).
+* **Milvus Lite is a development tool.** It slowed ~5× (10 → 50 ms) at this size; production Milvus runs as a distributed service.
+
+Raw results: [`ann_scale.csv`](../benchmarks/results/ann_scale.csv), [`ann_filtered_scale.csv`](../benchmarks/results/ann_filtered_scale.csv).
+
+## 5. Engineering wins
 
 | | Before | After |
 |---|---:|---:|
