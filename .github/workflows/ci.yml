@@ -18,7 +18,7 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
-      - run: pip install ruff==0.14.0
+      - run: pip install "$(grep "^ruff==" requirements-dev.txt)"  # single source of truth for the ruff version
       - run: ruff check .
 
   test:
