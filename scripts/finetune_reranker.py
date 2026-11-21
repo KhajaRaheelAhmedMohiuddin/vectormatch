@@ -107,6 +107,8 @@ def main() -> None:
 
     ce = CrossEncoder(args.base, device="cpu", max_length=args.max_len)
     model, tok = ce.model, ce.tokenizer
+    # ~48 pairs x 384 tokens of stored activations peaks near 12 GB; recompute them in backward instead.
+    model.gradient_checkpointing_enable(gradient_checkpointing_kwargs={"use_reentrant": False})
     opt = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=0.01)
     total = int(len(rows) // args.batch_size * args.epochs)
     warmup = max(1, int(0.1 * total))

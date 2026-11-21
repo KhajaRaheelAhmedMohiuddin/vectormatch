@@ -1,0 +1,28 @@
+{
+  "base_model": "cross-encoder/ms-marco-MiniLM-L-6-v2",
+  "retriever": "data/models/bge-small-vectormatch",
+  "train_triples": 8702,
+  "epochs": 0.0185,
+  "batch_size_cvs": 16,
+  "lr": 3e-05,
+  "max_len": 384,
+  "top_n": 20,
+  "best_step": 10,
+  "best_dev_P@10": 0.72,
+  "dev_queries": 20,
+  "train_seconds": 237.3274221420288,
+  "loss": "BCE: positive, BM25 hard negative, in-batch random negative",
+  "log": [
+    {
+      "step": 0,
+      "P@10": 0.7150000000000001,
+      "nDCG@10": 0.7236187626744665
+    },
+    {
+      "step": 10,
+      "loss": 0.8497748970985413,
+      "P@10": 0.72,
+      "nDCG@10": 0.7238746929245866
+    }
+  ]
+}
