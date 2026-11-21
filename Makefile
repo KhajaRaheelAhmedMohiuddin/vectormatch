@@ -1,7 +1,7 @@
 PY ?= python
 .DEFAULT_GOAL := help
 
-.PHONY: help install data finetune eval bench bench-scale charts space test lint api ui up
+.PHONY: help install data finetune eval bench bench-scale charts space release test lint api ui up
 
 help:               ## show this help
 	@grep -E '^[a-z-]+:.*##' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*## "}; {printf "  \033[36m%-12s\033[0m %s\n", $$1, $$2}'
@@ -30,6 +30,12 @@ charts:             ## render PNG charts from benchmark CSVs
 
 space:              ## assemble the Hugging Face Space bundle in dist/space
 	$(PY) scripts/build_space.py
+
+release: space      ## zip the fine-tuned model (+ model card) and the Space bundle into dist/ for a GitHub release
+	rm -rf dist/model && cp -r data/models/bge-small-vectormatch dist/model && cp hub/embedder_README.md dist/model/README.md
+	rm -f dist/model/training_info.json && cp benchmarks/results/finetune_log.json dist/model/training_info.json
+	cd dist/model && zip -qr ../bge-small-vectormatch.zip . && cd ../space && zip -qr ../vectormatch-space.zip .
+	@ls -la dist/*.zip
 
 test:               ## run the test suite with coverage
 	$(PY) -m pytest -q --cov
