@@ -144,8 +144,10 @@ def tab_bench():
 def main():
     st.set_page_config(page_title="VectorMatch", page_icon="🧭", layout="wide")
     st.title("🧭 VectorMatch")
-    st.caption("Hybrid semantic job matching over 25K real job posts · 6 interchangeable vector databases · "
-               "BM25 + dense + RRF + cross-encoder · measured, not guessed")
+    st.caption("Hybrid semantic job matching over 25K real job posts · fine-tuned embedding model "
+               "([bge-small-vectormatch](https://huggingface.co/KhajaHugging/bge-small-vectormatch), +15% P@10) · "
+               "BM25 + weighted rank fusion · interchangeable vector databases · "
+               "[code & benchmarks](https://github.com/KhajaRaheelAhmedMohiuddin/vectormatch)")
     backend, flt, rerank, k = sidebar()
     t1, t2, t3 = st.tabs(["📄 Resume match", "🔍 Job search", "📊 Benchmarks"])
     with t1:
